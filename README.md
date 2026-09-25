@@ -1,35 +1,16 @@
 # Mallet Sight Reader
 
-Offline-capable sight-reading trainer for keyboard percussion (2 / 3 / 4 mallets). Install it from the browser like an app.
+All files are in **one folder** so you can upload them on github.com (no directories).
 
-## Deploy on Netlify via GitHub
+## Upload to GitHub
 
-1. Create a GitHub repo and upload **this whole folder** (keep `index.html` at the repo root).
-2. In [Netlify](https://app.netlify.com): **Add new site → Import an existing project → GitHub**.
-3. Pick the repo. Leave build command empty. Publish directory: `.`
-4. Deploy. You get a URL like `https://something.netlify.app`.
+1. Unzip.
+2. Open your repo → **Add file → Upload files**.
+3. In the unzipped folder, select **all files** (Ctrl+A / Cmd+A) and drop them on the page.
+4. Commit.
 
-Every push to `main` redeploys automatically.
+You should see `index.html`, `app.js`, `abcjs.js`, many `sample-*.mp3` files, icons, etc. on the same level. No folders.
 
-Or drag this folder onto [Netlify Drop](https://app.netlify.com/drop) for a one-off publish.
+## Netlify
 
-## Install on a tablet / phone
-
-1. Open the Netlify URL in Safari (iPad) or Chrome (Android).
-2. **iPad / iPhone:** Share → **Add to Home Screen**.
-3. **Android Chrome:** menu → **Install app** / **Add to Home screen**.
-4. Open the icon. It runs full screen and works offline after the first visit.
-
-HTTPS is required for install. Netlify provides that.
-
-## Local use
-
-```bash
-python3 -m http.server 8080
-```
-
-Open `http://localhost:8080`. Service worker and install work on localhost too.
-
-## Samples
-
-Playback uses Fluid R3 GM mallet samples (MIT). See `samples/CREDITS.txt`.
+Import the GitHub repo. Publish directory: `.`  Build command: empty.

@@ -1,0 +1,4 @@
+Mallet samples from Fluid R3 GM (Frank Wen), MIT license,
+served via midi-js-soundfonts (Benjamin Gleitzman).
+https://github.com/gleitz/midi-js-soundfonts
+https://member.keymusician.com/Member/FluidR3_GM/index.html
