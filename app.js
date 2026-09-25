@@ -47,6 +47,10 @@
 
   let settings = loadSettings();
   let currentScore = null;
+  let currentVisual = null;
+  let beatMap = [];
+  let practiceBeat = 0;
+  let metroBeforePlay = false;
 
   function migrateKeyIds(keyId) {
     if (!keyId || keyId === "random") return T.KEYS.map((k) => k.id);
@@ -179,6 +183,31 @@
     return (RHYTHM_PRESETS[name] || []).slice();
   }
 
+  const DIFFICULTY = {
+    easy: { rhythms: ["h", "q"], maxLeap: 3, rhythmDensity: 1, measures: 4 },
+    medium: { rhythms: ["h", "q", "8"], maxLeap: 5, rhythmDensity: 3, measures: 8 },
+    hard: { rhythms: ["q", "qd", "8", "16", "8t"], maxLeap: 8, rhythmDensity: 5, measures: 12 },
+  };
+
+  function difficultyName() {
+    const names = ["easy", "medium", "hard"];
+    for (let i = 0; i < names.length; i++) {
+      const p = DIFFICULTY[names[i]];
+      const same = p.rhythms.slice().sort().join("|") === (settings.rhythms || []).slice().sort().join("|");
+      if (same && p.maxLeap === settings.maxLeap && p.rhythmDensity === settings.rhythmDensity && Number(p.measures) === Number(settings.measures)) {
+        return names[i];
+      }
+    }
+    return "";
+  }
+
+  function markDifficulty() {
+    const name = difficultyName();
+    document.querySelectorAll("[data-difficulty]").forEach((btn) => {
+      btn.classList.toggle("on", btn.dataset.difficulty === name);
+    });
+  }
+
   function buildRhythmToggles(container, key, selected) {
     container.innerHTML = "";
     T.DURATIONS.forEach((d) => {
@@ -205,6 +234,7 @@
         btn.classList.toggle("on", ids === now);
       });
     }
+    markDifficulty();
   }
 
   function buildStopIntervalToggles() {
@@ -418,6 +448,24 @@
         buildRhythmToggles($("#rhythms"), "rhythms", settings.rhythms);
       });
     });
+    document.querySelectorAll("[data-difficulty]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const p = DIFFICULTY[btn.dataset.difficulty];
+        if (!p) return;
+        settings.rhythms = p.rhythms.slice();
+        settings.maxLeap = p.maxLeap;
+        settings.rhythmDensity = p.rhythmDensity;
+        settings.measures = p.measures;
+        if ($("#maxLeap")) $("#maxLeap").value = String(p.maxLeap);
+        if ($("#density")) $("#density").value = String(p.rhythmDensity);
+        if ($("#measures")) $("#measures").value = String(p.measures);
+        saveSettings();
+        buildRhythmToggles($("#rhythms"), "rhythms", settings.rhythms);
+        markDifficulty();
+        openSettings(false);
+        requestAnimationFrame(() => requestAnimationFrame(generate));
+      });
+    });
     buildStopIntervalToggles();
     if ($("#stopPlace")) $("#stopPlace").value = settings.stopPlace || "below";
     if ($("#keysAll")) {
@@ -510,6 +558,42 @@
       settings.rangeHigh = t;
     }
     saveSettings();
+    markDifficulty();
+  }
+
+  function renderOptions() {
+    return {
+      zoom: settings.zoom,
+      showSticking: settings.showSticking,
+      annotate: settings.annotate,
+    };
+  }
+
+  function resetPlayButton() {
+    const btn = $("#btnPlay");
+    if (!btn) return;
+    btn.classList.remove("on");
+    btn.textContent = "Play";
+  }
+
+  function haltPlay() {
+    if (typeof AudioEngine === "undefined" || !AudioEngine.isPlaying()) return;
+    AudioEngine.stopPlayback();
+    resetPlayButton();
+    if (!AudioEngine.isMetro()) {
+      const metro = $("#btnMetro");
+      if (metro) metro.classList.remove("on");
+    }
+    if (typeof ScoreRenderer !== "undefined") ScoreRenderer.clearBeat();
+  }
+
+  function paintScore() {
+    haltPlay();
+    ScoreRenderer.clearBeat();
+    currentVisual = ScoreRenderer.renderScore($("#score"), currentScore, renderOptions());
+    const beatTicks = currentScore && currentScore.time ? currentScore.time.beatTicks : 24;
+    beatMap = ScoreRenderer.prepareCursor(currentVisual, settings.tempo, beatTicks) || [];
+    practiceBeat = 0;
   }
 
   function generate() {
@@ -522,11 +606,7 @@
       const n = selectedKeysInCircle().length;
       if (n > 1) keyStep = (keyStep + 1) % n;
       if ($("#keyModeHint")) $("#keyModeHint").textContent = keyModeText();
-      ScoreRenderer.renderScore($("#score"), currentScore, {
-        zoom: settings.zoom,
-        showSticking: settings.showSticking,
-        annotate: settings.annotate,
-      });
+      paintScore();
     } catch (err) {
       console.error(err);
       $("#score").innerHTML =
@@ -671,19 +751,41 @@
     function startMetro() {
       const spec = metroSpec();
       drawLamps(spec.beats);
+      practiceBeat = 0;
+      AudioEngine.setClicks(true);
       AudioEngine.ac();
       AudioEngine.startMetronome(spec.bpm, spec.beats, {
         subdiv: metroSubdiv,
-        onBeat: lightBeat,
+        onBeat: (i, count, fromClick) => {
+          lightBeat(i, count);
+          if (!fromClick || !beatMap.length || AudioEngine.isPlaying()) return;
+          ScoreRenderer.showBeat(beatMap, practiceBeat % beatMap.length);
+          practiceBeat++;
+        },
       });
       $("#btnMetro").classList.add("on");
     }
 
+    function endPlay(restartMetro) {
+      resetPlayButton();
+      ScoreRenderer.clearBeat();
+      lightBeat(-1, metroSpec().beats);
+      if (restartMetro) startMetro();
+      else $("#btnMetro").classList.remove("on");
+    }
+
     $("#btnMetro").addEventListener("click", () => {
+      if (AudioEngine.isPlaying()) {
+        const on = !$("#btnMetro").classList.contains("on");
+        $("#btnMetro").classList.toggle("on", on);
+        AudioEngine.setClicks(on);
+        return;
+      }
       if (AudioEngine.isMetro()) {
         AudioEngine.stopMetronome();
         $("#btnMetro").classList.remove("on");
         lightBeat(-1, metroSpec().beats);
+        ScoreRenderer.clearBeat();
       } else {
         startMetro();
       }
@@ -701,53 +803,58 @@
 
     $("#btnPlay").addEventListener("click", () => {
       if (AudioEngine.isPlaying()) {
+        const resume = metroBeforePlay;
         AudioEngine.stopPlayback();
-        $("#btnPlay").classList.remove("on");
-        $("#btnPlay").textContent = "Play";
+        endPlay(resume);
         return;
       }
       if (!currentScore) generate();
       if (!currentScore) return;
+      metroBeforePlay = AudioEngine.isMetro();
+      AudioEngine.stopMetronome();
+      AudioEngine.setClicks(true);
       AudioEngine.ac();
+      const spec = metroSpec();
+      drawLamps(spec.beats);
+      beatMap = ScoreRenderer.prepareCursor(currentVisual, settings.tempo, currentScore.time.beatTicks) || [];
       $("#btnPlay").classList.add("on");
-      $("#btnPlay").textContent = "Stop";
-      AudioEngine.playScore(currentScore, settings.tempo, () => {
-        $("#btnPlay").classList.remove("on");
-        $("#btnPlay").textContent = "Play";
+      $("#btnPlay").textContent = "1";
+      $("#btnMetro").classList.add("on");
+      AudioEngine.playAlong(currentScore, {
+        quarterBpm: settings.tempo,
+        clickBpm: spec.bpm,
+        beatsPerBar: spec.beats,
+        beatTicks: currentScore.time.beatTicks,
+        countIn: 1,
+        onCue: (q) => {
+          if (!AudioEngine.isPlaying()) return;
+          const lamp = q.phase === "countin" ? q.beat : q.beat % q.beats;
+          lightBeat(lamp, q.beats);
+          if (q.phase === "countin") {
+            $("#btnPlay").textContent = String(q.beat + 1);
+            ScoreRenderer.showBeat(beatMap, 0);
+          } else {
+            $("#btnPlay").textContent = "Stop";
+            ScoreRenderer.showBeat(beatMap, q.beat);
+          }
+        },
+        done: () => endPlay(metroBeforePlay),
       });
     });
 
     $("#btnZoomOut").addEventListener("click", () => {
       settings.zoom = Math.max(0.7, settings.zoom - 0.1);
       saveSettings();
-      if (currentScore) {
-        ScoreRenderer.renderScore($("#score"), currentScore, {
-          zoom: settings.zoom,
-          showSticking: settings.showSticking,
-          annotate: settings.annotate,
-        });
-      }
+      if (currentScore) paintScore();
     });
     $("#btnZoomIn").addEventListener("click", () => {
       settings.zoom = Math.min(1.6, settings.zoom + 0.1);
       saveSettings();
-      if (currentScore) {
-        ScoreRenderer.renderScore($("#score"), currentScore, {
-          zoom: settings.zoom,
-          showSticking: settings.showSticking,
-          annotate: settings.annotate,
-        });
-      }
+      if (currentScore) paintScore();
     });
 
     window.addEventListener("resize", () => {
-      if (currentScore) {
-        ScoreRenderer.renderScore($("#score"), currentScore, {
-          zoom: settings.zoom,
-          showSticking: settings.showSticking,
-          annotate: settings.annotate,
-        });
-      }
+      if (currentScore) paintScore();
     });
 
     document.addEventListener("keydown", (e) => {

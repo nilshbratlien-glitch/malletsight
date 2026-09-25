@@ -305,7 +305,7 @@
     const pageW = Math.max(280, container.clientWidth || 800);
     const scale = Math.max(0.75, Math.min(1.8, options.zoom || 1));
     try {
-      ABCJS.renderAbc(wrap, abc, {
+      const rendered = ABCJS.renderAbc(wrap, abc, {
         scale: scale,
         staffwidth: Math.max(240, pageW - 36),
         paddingtop: 8,
@@ -319,14 +319,107 @@
         },
         add_classes: true,
       });
+      return rendered && rendered[0] ? rendered[0] : null;
     } catch (err) {
       console.error(err);
       wrap.innerHTML =
         '<p class="error">Could not render this etude.<br><small>' +
         String(err.message || err) +
         "</small></p>";
+      return null;
     }
   }
 
-  global.ScoreRenderer = { renderScore, scoreToAbc };
+  let hotNotes = [];
+  let cursorLine = null;
+
+  function flattenTimingElements(ev) {
+    const out = [];
+    (ev.elements || []).forEach((item) => {
+      if (!item) return;
+      if (item.length && item.nodeType == null) {
+        for (let i = 0; i < item.length; i++) if (item[i]) out.push(item[i]);
+      } else out.push(item);
+    });
+    return out;
+  }
+
+  function prepareCursor(visual, quarterBpm, beatTicks) {
+    if (!visual || !visual.setTiming) return [];
+    const bpm = Number(quarterBpm) || 80;
+    const beatMs = ((beatTicks || 24) / 24) * (60000 / bpm);
+    if (!beatMs) return [];
+    let timings = [];
+    try { timings = visual.setTiming(bpm, 0) || []; } catch (err) { return []; }
+    const beats = [];
+    timings.forEach((ev) => {
+      if (!ev || ev.type !== "event") return;
+      const idx = Math.max(0, Math.floor((ev.milliseconds + 1) / beatMs));
+      if (!beats[idx]) beats[idx] = { elements: [] };
+      flattenTimingElements(ev).forEach((el) => beats[idx].elements.push(el));
+    });
+    return beats;
+  }
+
+  function clearBeat() {
+    hotNotes.forEach((el) => {
+      if (el.classList) el.classList.remove("beat-hot");
+    });
+    hotNotes = [];
+    if (cursorLine && cursorLine.parentNode) cursorLine.parentNode.removeChild(cursorLine);
+    cursorLine = null;
+  }
+
+  function showBeat(beats, index) {
+    clearBeat();
+    if (!beats || !beats.length || index < 0) return;
+    let beat = null;
+    const max = Math.min(index, beats.length - 1);
+    for (let i = max; i >= 0; i--) {
+      if (beats[i] && beats[i].elements && beats[i].elements.length) {
+        beat = beats[i];
+        break;
+      }
+    }
+    if (!beat) return;
+    let svg = null;
+    let x = Infinity;
+    let y1 = Infinity;
+    let y2 = -Infinity;
+    beat.elements.forEach((el) => {
+      if (!el || !el.classList) return;
+      el.classList.add("beat-hot");
+      hotNotes.push(el);
+      if (!svg && el.ownerSVGElement) svg = el.ownerSVGElement;
+      try {
+        const box = el.getBBox();
+        x = Math.min(x, box.x);
+        y1 = Math.min(y1, box.y);
+        y2 = Math.max(y2, box.y + box.height);
+      } catch (err) {}
+    });
+    if (svg && isFinite(x) && isFinite(y1)) {
+      cursorLine = document.createElementNS(svg.namespaceURI, "line");
+      cursorLine.setAttribute("class", "beat-cursor");
+      cursorLine.setAttribute("x1", x - 5);
+      cursorLine.setAttribute("x2", x - 5);
+      cursorLine.setAttribute("y1", y1 - 8);
+      cursorLine.setAttribute("y2", y2 + 10);
+      cursorLine.setAttribute("stroke", "#d6452e");
+      cursorLine.setAttribute("stroke-width", "2.5");
+      cursorLine.setAttribute("stroke-linecap", "round");
+      svg.appendChild(cursorLine);
+    }
+    const el = hotNotes[0];
+    const stage = document.querySelector(".stage");
+    if (el && stage && el.getBoundingClientRect) {
+      const r = el.getBoundingClientRect();
+      const s = stage.getBoundingClientRect();
+      if (r.bottom < s.top + 24 || r.top > s.bottom - 24) {
+        el.scrollIntoView({ block: "center", inline: "nearest" });
+      }
+    }
+  }
+
+  global.ScoreRenderer = { renderScore, scoreToAbc, prepareCursor, showBeat, clearBeat };
 })(window);

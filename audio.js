@@ -15,6 +15,12 @@
   let playIndex = 0;
   let playNextTime = 0;
   let onPlayDone = null;
+  let playToken = 0;
+  let playOwnsClick = false;
+  let clickList = [];
+  let cueList = [];
+  let playEnd = 0;
+  let clicksEnabled = true;
 
   const LOOKAHEAD = 0.025;
   const SCHEDULE_AHEAD = 0.12;
@@ -250,6 +256,29 @@
   function scheduler() {
     if (!ctx) return;
     const now = ctx.currentTime;
+    if (playOwnsClick) {
+      while (clickList.length && clickList[0].time < now + SCHEDULE_AHEAD) {
+        const tick = clickList.shift();
+        if (clicksEnabled) scheduleClick(tick.time, tick.accent, tick.sub);
+      }
+      while (cueList.length && cueList[0].time < now + SCHEDULE_AHEAD) {
+        const cue = cueList.shift();
+        const wait = Math.max(0, (cue.time - now) * 1000);
+        const token = cue.token;
+        setTimeout(() => {
+          if (token === playToken && playing) cue.fn();
+        }, wait);
+      }
+      if (!clickList.length && !cueList.length && now > playEnd) {
+        playing = false;
+        playOwnsClick = false;
+        const cb = onPlayDone;
+        onPlayDone = null;
+        stopClockIfIdle();
+        if (cb) cb();
+      }
+      return;
+    }
     while (metroOn && nextNoteTime < now + SCHEDULE_AHEAD) {
       const isDown = subBeat === 0;
       const accent = isDown && beat === 0;
@@ -258,7 +287,7 @@
         const captured = beat;
         const wait = Math.max(0, (nextNoteTime - now) * 1000);
         setTimeout(() => {
-          if (metroOn && onBeat) onBeat(captured, beatsPerBar);
+          if (metroOn && onBeat) onBeat(captured, beatsPerBar, true);
         }, wait);
       }
       nextNoteTime += secondsPerPulse();
@@ -305,7 +334,7 @@
     metroOn = true;
     nextNoteTime = ctx.currentTime + 0.05;
     startClock();
-    if (onBeat) onBeat(0, beatsPerBar);
+    if (onBeat) onBeat(0, beatsPerBar, false);
   }
 
   function stopMetronome() {
@@ -325,52 +354,109 @@
 
   let playEndTimer = null;
 
-  function playScore(score, bpm, done) {
+  function playAlong(score, opts) {
     stopPlayback();
+    opts = opts || {};
+    const token = playToken;
     const c = ac();
-    tempo = Number(bpm) || tempo || 80;
-    onPlayDone = done;
+    const quarterBpm = Number(opts.quarterBpm) || tempo || 80;
+    const clickBpm = Number(opts.clickBpm) || quarterBpm;
+    const beats = Math.max(1, opts.beatsPerBar || 4);
+    const countIn = Math.max(0, opts.countIn | 0);
+    const onCue = opts.onCue || null;
+    onPlayDone = opts.done || null;
+    clicksEnabled = true;
     const instId = (score && score.settingsSnapshot && score.settingsSnapshot.instrument) || "mar50";
+    const qTicks = quarterTicks();
+    const beatSec = 60 / clickBpm;
+    const qSec = 60 / quarterBpm;
+
     const kick = () => {
+      if (token !== playToken) return;
       if (!score || !score.measures) {
-        if (done) done();
-        return;
-      }
-      let t = c.currentTime + 0.06;
-      score.measures.forEach((m) => {
-        (m.events || []).forEach((ev) => {
-          const ticks = ev.dur && ev.dur.ticks ? ev.dur.ticks : quarterTicks();
-          const dur = Math.max(0.06, (ticks / quarterTicks()) * (60 / tempo));
-          if (!ev.rest && ev.pitches && ev.pitches.length) {
-            const instId = (score.settingsSnapshot && score.settingsSnapshot.instrument) || "mar50";
-            ev.pitches.forEach((p) => {
-              try {
-                scheduleNote(t, p, dur, instId);
-              } catch (err) {}
-            });
-          }
-          t += dur;
-        });
-      });
-      playing = true;
-      const ms = Math.max(200, (t - c.currentTime) * 1000 + 80);
-      playEndTimer = setTimeout(() => {
-        playing = false;
-        playEndTimer = null;
         const cb = onPlayDone;
         onPlayDone = null;
         if (cb) cb();
-      }, ms);
+        return;
+      }
+      const items = [];
+      let tickPos = 0;
+      score.measures.forEach((m) => {
+        (m.events || []).forEach((ev) => {
+          items.push({ ev: ev, tick: tickPos });
+          tickPos += ev.dur && ev.dur.ticks ? ev.dur.ticks : qTicks;
+        });
+      });
+      const musicSec = (tickPos / qTicks) * qSec;
+      const musicClicks = Math.max(1, Math.round(musicSec / beatSec));
+      const t0 = c.currentTime + 0.07;
+      const countBeats = countIn * beats;
+      const musicAt = t0 + countBeats * beatSec;
+      items.forEach((item) => {
+        const ev = item.ev;
+        const when = musicAt + (item.tick / qTicks) * qSec;
+        const dur = Math.max(0.05, ((ev.dur && ev.dur.ticks ? ev.dur.ticks : qTicks) / qTicks) * qSec);
+        if (!ev.rest && ev.pitches && ev.pitches.length) {
+          ev.pitches.forEach((p) => {
+            try { scheduleNote(when, p, dur, instId); } catch (err) {}
+          });
+        }
+      });
+      clickList = [];
+      cueList = [];
+      const steps = subdiv === 2 || subdiv === 4 ? subdiv : 1;
+      const total = countBeats + musicClicks;
+      for (let i = 0; i < total; i++) {
+        const time = t0 + i * beatSec;
+        const inCount = i < countBeats;
+        const beat = inCount ? i % beats : (i - countBeats) % beats;
+        clickList.push({ time: time, accent: beat === 0, sub: false });
+        for (let s = 1; s < steps; s++) {
+          clickList.push({ time: time + (beatSec * s) / steps, accent: false, sub: true });
+        }
+        clickList.sort((a, b) => a.time - b.time);
+        cueList.push({
+          time: time,
+          token: token,
+          fn: () => {
+            if (onCue) {
+              onCue({
+                phase: inCount ? "countin" : "play",
+                beat: inCount ? beat : i - countBeats,
+                beats: beats,
+                musicBeats: musicClicks,
+              });
+            }
+          },
+        });
+      }
+      playEnd = musicAt + musicSec + 0.08;
+      playing = true;
+      playOwnsClick = true;
+      startClock();
     };
+
     const go = () => {
-      loadInstrument(instId).then(kick).catch(kick);
+      loadInstrument(instId).then(() => { if (token === playToken) kick(); }).catch(() => { if (token === playToken) kick(); });
     };
     if (c.state === "running") go();
     else c.resume().then(go).catch(go);
   }
 
+  function setClicks(on) {
+    clicksEnabled = !!on;
+  }
+
+  function playScore(score, bpm, done) {
+    playAlong(score, { quarterBpm: bpm, clickBpm: bpm, beatsPerBar: 4, countIn: 0, done: done });
+  }
+
   function stopPlayback() {
+    playToken++;
     playing = false;
+    playOwnsClick = false;
+    clickList = [];
+    cueList = [];
     playEvents = null;
     playIndex = 0;
     if (playEndTimer) {
@@ -395,6 +481,8 @@
     setTempo,
     setSubdiv,
     playScore,
+    playAlong,
+    setClicks,
     stopPlayback,
     isPlaying,
     isMetro,

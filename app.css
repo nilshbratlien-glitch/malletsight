@@ -108,6 +108,12 @@ button, select, input[type="range"] {
 }
 .score-inner { width: 100%; overflow-x: auto; }
 .score-inner svg { display: block; max-width: 100%; height: auto; }
+.beat-hot,
+.beat-hot * {
+  fill: #d6452e !important;
+  stroke: #d6452e !important;
+}
+.beat-cursor { pointer-events: none; }
 .abc-wrap .abcjs-title { font-size: 14px !important; fill: #5c564c !important; }
 .error { color: #8a2020; padding: 24px; }
 #emptyHint { color: #6d675c; padding: 48px 20px; text-align: center; }
