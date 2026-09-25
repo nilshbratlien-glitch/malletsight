@@ -203,6 +203,14 @@
     ];
   }
 
+  /* Fewest accidentals first. Same count: sharps before flats, major before its relative minor. */
+  function circleRank(key) {
+    const n = Math.abs(key.fifths || 0);
+    const flat = key.fifths < 0 ? 1 : 0;
+    const minor = key.id.endsWith("m") ? 1 : 0;
+    return n * 4 + flat * 2 + minor;
+  }
+
   global.Theory = {
     INSTRUMENTS,
     KEYS,
@@ -217,6 +225,7 @@
     clamp,
     randInt,
     pick,
+    circleRank,
     weightedPick,
     diatonicPitches,
     chromaticPitches,

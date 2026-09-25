@@ -220,13 +220,33 @@
     return key.id.replace("#", "♯").replace("b", "♭");
   }
 
-  function keyModeText() {
-    const n = settings.keyIds.length;
-    if (n <= 1) {
-      const k = T.KEYS.find((x) => x.id === settings.keyIds[0]);
-      return (k ? k.name : "One key") + " · fixed";
+  let keyStep = 0;
+  let keyStepFor = "";
+
+  function selectedKeysInCircle() {
+    const ids = new Set(settings.keyIds || []);
+    return T.KEYS.filter((k) => ids.has(k.id)).slice().sort((a, b) => T.circleRank(a) - T.circleRank(b));
+  }
+
+  function selectionToken() {
+    return (settings.keyIds || []).slice().sort().join("|");
+  }
+
+  function resetKeyStepIfNeeded() {
+    const token = selectionToken();
+    if (token !== keyStepFor) {
+      keyStep = 0;
+      keyStepFor = token;
     }
-    return n + " keys · shuffled each Generate";
+  }
+
+  function keyModeText() {
+    const ordered = selectedKeysInCircle();
+    if (ordered.length <= 1) {
+      return (ordered[0] ? ordered[0].name : "One key") + " · fixed";
+    }
+    const next = ordered[keyStep % ordered.length];
+    return "Next · " + next.name;
   }
 
   function syncLegacyKeyId() {
@@ -240,6 +260,8 @@
       if (valid.has(id) && next.indexOf(id) < 0) next.push(id);
     });
     settings.keyIds = next.length ? next : ["C"];
+    keyStep = 0;
+    keyStepFor = selectionToken();
     syncLegacyKeyId();
     saveSettings();
     buildKeyToggles();
@@ -268,8 +290,8 @@
         box.appendChild(btn);
       });
     }
-    fill(majorBox, T.KEYS.filter((k) => !k.id.endsWith("m")));
-    fill(minorBox, T.KEYS.filter((k) => k.id.endsWith("m")));
+    fill(majorBox, T.KEYS.filter((k) => !k.id.endsWith("m")).sort((a, b) => T.circleRank(a) - T.circleRank(b)));
+    fill(minorBox, T.KEYS.filter((k) => k.id.endsWith("m")).sort((a, b) => T.circleRank(a) - T.circleRank(b)));
     const ids = settings.keyIds.slice().sort().join(",");
     const all = T.KEYS.map((k) => k.id).sort().join(",");
     const majors = T.KEYS.filter((k) => !k.id.endsWith("m")).map((k) => k.id).sort().join(",");
@@ -465,8 +487,13 @@
   function generate() {
     readInputs();
     applyInstrumentRange(false);
+    resetKeyStepIfNeeded();
+    settings.keyIndex = keyStep;
     try {
       currentScore = Generator.generate(settings);
+      const n = selectedKeysInCircle().length;
+      if (n > 1) keyStep = (keyStep + 1) % n;
+      if ($("#keyModeHint")) $("#keyModeHint").textContent = keyModeText();
       ScoreRenderer.renderScore($("#score"), currentScore, {
         zoom: settings.zoom,
         showSticking: settings.showSticking,

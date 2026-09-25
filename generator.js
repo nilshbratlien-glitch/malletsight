@@ -532,9 +532,11 @@
       else ids = all.map((k) => k.id);
     }
     const pool = all.filter((k) => ids.indexOf(k.id) >= 0);
-    if (!pool.length) return all[0];
-    if (pool.length === 1) return pool[0];
-    return T.pick(pool);
+    const ordered = pool.slice().sort((a, b) => T.circleRank(a) - T.circleRank(b));
+    if (!ordered.length) return all[0];
+    if (ordered.length === 1) return ordered[0];
+    const idx = Math.abs(parseInt(settings.keyIndex, 10) || 0) % ordered.length;
+    return ordered[idx];
   }
 
   function generate(settings) {
