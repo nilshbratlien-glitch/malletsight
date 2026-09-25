@@ -9,6 +9,7 @@
     chordChance: 0.28,
     clef: "auto",
     keyId: "C",
+    keyIds: ["C"],
     keyFilter: "all",
     timeId: "4/4",
     measures: 8,
@@ -47,10 +48,27 @@
   let settings = loadSettings();
   let currentScore = null;
 
+  function migrateKeyIds(keyId) {
+    if (!keyId || keyId === "random") return T.KEYS.map((k) => k.id);
+    if (T.KEYS.some((k) => k.id === keyId)) return [keyId];
+    return ["C"];
+  }
+
   function loadSettings() {
     try {
       const raw = localStorage.getItem(STORAGE);
-      if (raw) return Object.assign({}, DEFAULTS, JSON.parse(raw));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const merged = Object.assign({}, DEFAULTS, parsed);
+        const valid = new Set(T.KEYS.map((k) => k.id));
+        if (!Array.isArray(parsed.keyIds)) {
+          merged.keyIds = migrateKeyIds(parsed.keyId);
+        } else {
+          merged.keyIds = parsed.keyIds.filter((id) => valid.has(id));
+          if (!merged.keyIds.length) merged.keyIds = ["C"];
+        }
+        return merged;
+      }
     } catch (e) {}
     return Object.assign({}, DEFAULTS);
   }
@@ -198,6 +216,70 @@
     });
   }
 
+  function keyChipLabel(key) {
+    return key.id.replace("#", "♯").replace("b", "♭");
+  }
+
+  function keyModeText() {
+    const n = settings.keyIds.length;
+    if (n <= 1) {
+      const k = T.KEYS.find((x) => x.id === settings.keyIds[0]);
+      return (k ? k.name : "One key") + " · fixed";
+    }
+    return n + " keys · shuffled each Generate";
+  }
+
+  function syncLegacyKeyId() {
+    settings.keyId = settings.keyIds.length === 1 ? settings.keyIds[0] : "random";
+  }
+
+  function setKeyIds(ids) {
+    const valid = new Set(T.KEYS.map((k) => k.id));
+    const next = [];
+    ids.forEach((id) => {
+      if (valid.has(id) && next.indexOf(id) < 0) next.push(id);
+    });
+    settings.keyIds = next.length ? next : ["C"];
+    syncLegacyKeyId();
+    saveSettings();
+    buildKeyToggles();
+  }
+
+  function buildKeyToggles() {
+    const majorBox = $("#keysMajorChips");
+    const minorBox = $("#keysMinorChips");
+    if (!majorBox || !minorBox) return;
+    if (!settings.keyIds || !settings.keyIds.length) settings.keyIds = ["C"];
+    function fill(box, keys) {
+      box.innerHTML = "";
+      keys.forEach((k) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "chip" + (settings.keyIds.indexOf(k.id) >= 0 ? " on" : "");
+        btn.textContent = keyChipLabel(k);
+        btn.title = k.name;
+        btn.addEventListener("click", () => {
+          const set = new Set(settings.keyIds);
+          if (set.has(k.id)) {
+            if (set.size > 1) set.delete(k.id);
+          } else set.add(k.id);
+          setKeyIds(T.KEYS.map((x) => x.id).filter((id) => set.has(id)));
+        });
+        box.appendChild(btn);
+      });
+    }
+    fill(majorBox, T.KEYS.filter((k) => !k.id.endsWith("m")));
+    fill(minorBox, T.KEYS.filter((k) => k.id.endsWith("m")));
+    const ids = settings.keyIds.slice().sort().join(",");
+    const all = T.KEYS.map((k) => k.id).sort().join(",");
+    const majors = T.KEYS.filter((k) => !k.id.endsWith("m")).map((k) => k.id).sort().join(",");
+    const minors = T.KEYS.filter((k) => k.id.endsWith("m")).map((k) => k.id).sort().join(",");
+    if ($("#keysAll")) $("#keysAll").classList.toggle("on", ids === all);
+    if ($("#keysMajor")) $("#keysMajor").classList.toggle("on", ids === majors);
+    if ($("#keysMinor")) $("#keysMinor").classList.toggle("on", ids === minors);
+    if ($("#keyModeHint")) $("#keyModeHint").textContent = keyModeText();
+  }
+
   function textureOptions() {
     if (settings.mallets === 2) {
       return [
@@ -229,11 +311,7 @@
 
   function bindUI() {
     fillSelect($("#instrument"), T.INSTRUMENTS, settings.instrumentId);
-    fillSelect(
-      $("#key"),
-      [{ id: "random", name: "Random key" }].concat(T.KEYS),
-      settings.keyId
-    );
+    buildKeyToggles();
     fillSelect(
       $("#time"),
       [{ id: "random", name: "Random meter" }].concat(T.TIMES),
@@ -292,6 +370,19 @@
     buildRhythmToggles($("#rests"), "rests", settings.rests);
     buildStopIntervalToggles();
     if ($("#stopPlace")) $("#stopPlace").value = settings.stopPlace || "below";
+    if ($("#keysAll")) {
+      $("#keysAll").addEventListener("click", () => setKeyIds(T.KEYS.map((k) => k.id)));
+    }
+    if ($("#keysMajor")) {
+      $("#keysMajor").addEventListener("click", () => {
+        setKeyIds(T.KEYS.filter((k) => !k.id.endsWith("m")).map((k) => k.id));
+      });
+    }
+    if ($("#keysMinor")) {
+      $("#keysMinor").addEventListener("click", () => {
+        setKeyIds(T.KEYS.filter((k) => k.id.endsWith("m")).map((k) => k.id));
+      });
+    }
     updateMalletHints();
   }
 
@@ -333,8 +424,8 @@
     settings.clef = $("#clef").value;
     const instClef = T.INSTRUMENTS.find((i) => i.id === settings.instrumentId);
     if (instClef && instClef.defaultClef === "treble") settings.clef = "treble";
-    settings.keyId = $("#key").value;
     settings.timeId = $("#time").value;
+    syncLegacyKeyId();
     settings.measures = parseInt($("#measures").value, 10);
     settings.tempo = parseInt($("#tempo").value, 10);
     settings.maxLeap = parseInt($("#maxLeap").value, 10);

@@ -524,11 +524,21 @@
     return voiceBlock(nNotes, pool, key, settings, [top]);
   }
 
+  function resolveKey(settings) {
+    const all = T.KEYS;
+    let ids = Array.isArray(settings.keyIds) ? settings.keyIds.filter(Boolean) : [];
+    if (!ids.length) {
+      if (settings.keyId && settings.keyId !== "random") ids = [settings.keyId];
+      else ids = all.map((k) => k.id);
+    }
+    const pool = all.filter((k) => ids.indexOf(k.id) >= 0);
+    if (!pool.length) return all[0];
+    if (pool.length === 1) return pool[0];
+    return T.pick(pool);
+  }
+
   function generate(settings) {
-    const key =
-      settings.keyId === "random"
-        ? T.pick(T.KEYS.filter((k) => (settings.keyFilter === "minor" ? k.id.endsWith("m") : settings.keyFilter === "major" ? !k.id.endsWith("m") : true)))
-        : T.KEYS.find((k) => k.id === settings.keyId) || T.KEYS[0];
+    const key = resolveKey(settings);
     const time =
       settings.timeId === "random"
         ? T.pick(T.TIMES.filter((t) => ["4/4", "3/4", "2/4", "6/8"].includes(t.id)))

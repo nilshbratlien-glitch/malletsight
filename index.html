@@ -215,6 +215,9 @@ select, .field {
   border-color: var(--accent);
   color: var(--accent);
 }
+.key-presets { margin: 0 0 8px; }
+.key-presets .chip { min-height: 32px; font-size: 13px; }
+#keyModeHint { text-align: right; }
 
 .toggle {
   display: flex;
@@ -336,7 +339,20 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 
       <div class="section">
         <h3>Piece</h3>
-        <div class="row"><label>Key</label><select id="key"></select></div>
+        <div class="row">
+          <label>Keys</label>
+          <span id="keyModeHint" class="hint"></span>
+        </div>
+        <div class="chips key-presets">
+          <button type="button" class="chip" id="keysAll">All</button>
+          <button type="button" class="chip" id="keysMajor">Majors</button>
+          <button type="button" class="chip" id="keysMinor">Minors</button>
+        </div>
+        <p class="hint">Major</p>
+        <div class="chips" id="keysMajorChips"></div>
+        <p class="hint">Minor</p>
+        <div class="chips" id="keysMinorChips"></div>
+        <p class="hint" id="keyPickHint">One key stays fixed. Two or more are shuffled on every Generate.</p>
         <div class="row"><label>Meter</label><select id="time"></select></div>
         <div class="row"><label>Measures</label>
           <select id="measures">

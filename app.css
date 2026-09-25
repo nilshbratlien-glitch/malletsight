@@ -201,6 +201,9 @@ select, .field {
   border-color: var(--accent);
   color: var(--accent);
 }
+.key-presets { margin: 0 0 8px; }
+.key-presets .chip { min-height: 32px; font-size: 13px; }
+#keyModeHint { text-align: right; }
 
 .toggle {
   display: flex;
