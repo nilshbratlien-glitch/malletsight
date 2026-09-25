@@ -14,17 +14,7 @@
   }
 
   function midiToAbcNote(midi, key) {
-    const pc = ((midi % 12) + 12) % 12;
-    const oct = T.midiOctave(midi);
-    const scale = T.scalePcs(key);
-    const raw = T.midiToName(midi, key.flats);
-    const letter = raw[0].toUpperCase();
-    let acc = "";
-    if (scale.indexOf(pc) === -1) {
-      if (raw.indexOf("#") >= 0) acc = "^";
-      else if (raw.indexOf("b") >= 0) acc = "_";
-    }
-    return acc + abcOctaveLetter(letter, oct);
+    return T.spellAbc(midi, key);
   }
 
   function gcd(a, b) {

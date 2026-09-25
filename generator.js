@@ -173,6 +173,23 @@
     return out;
   }
 
+  function colorTop(pitches, settings, key, cell) {
+    if (!settings.accidentals || (cell && cell.cadence) || !pitches || !pitches.length) return pitches;
+    if (Math.random() > 0.22) return pitches;
+    const pcs = T.scalePcs(key);
+    const topAt = pitches.length - 1;
+    const top = pitches[topAt];
+    const opts = [top - 1, top + 1].filter((p) => {
+      const pc = ((p % 12) + 12) % 12;
+      return p >= settings.rangeLow && p <= settings.rangeHigh && pcs.indexOf(pc) < 0 && pitches.indexOf(p) < 0;
+    });
+    if (!opts.length) return pitches;
+    const next = pitches.slice();
+    next[topAt] = T.pick(opts);
+    next.sort((a, b) => a - b);
+    return next;
+  }
+
   function pitchPool(settings, key) {
     const diat = T.diatonicPitches(key, settings.rangeLow, settings.rangeHigh);
     if (!settings.accidentals) return diat;
@@ -212,6 +229,7 @@
     const lo = pool[0];
     const hi = pool[pool.length - 1];
     let prev = null;
+    let prevWasChromatic = false;
     let dir = Math.random() < 0.55 ? 1 : -1;
     let sinceTurn = 0;
     const turnEvery = 5 + ((Math.random() * 4) | 0);
@@ -235,21 +253,44 @@
       return approaches.length ? T.nearestIn(approaches, from) : from;
     }
 
+    function inScale(p) {
+      return pcs.indexOf(pcOf(p)) >= 0;
+    }
+    function chromaticBeside(pitch, from) {
+      const opts = [];
+      [pitch - 1, pitch + 1].forEach((p) => {
+        if (p < settings.rangeLow || p > settings.rangeHigh) return;
+        if (inScale(p)) return;
+        if (from != null && Math.abs(p - from) > maxSemi) return;
+        opts.push(p);
+      });
+      if (!opts.length) return pitch;
+      if (from != null) {
+        const steps = opts.filter((p) => Math.abs(p - from) <= 2);
+        if (steps.length) return T.pick(steps);
+      }
+      return T.pick(opts);
+    }
+
     return function next(kind) {
       if (prev == null) {
         prev = settings.startTonic
           ? nearestTonic((settings.rangeLow + settings.rangeHigh) / 2)
           : T.nearestIn(pool, (settings.rangeLow + settings.rangeHigh) / 2);
+        prevWasChromatic = false;
         return prev;
       }
       if (kind === "tonic") {
         prev = nearestTonic(prev);
+        prevWasChromatic = false;
         return prev;
       }
       if (kind === "approach") {
         prev = nearestApproach(prev);
+        prevWasChromatic = false;
         return prev;
       }
+      const from = prev;
       sinceTurn++;
       if (sinceTurn >= turnEvery || prev <= lo + 3 || prev >= hi - 3) {
         dir *= -1;
@@ -272,6 +313,22 @@
         if (deg === 6) w *= 0.55;
         return w;
       });
+      if (prevWasChromatic) {
+        prevWasChromatic = false;
+        const near = pool.filter((p) => {
+          const d = Math.abs(p - from);
+          return d > 0 && d <= 2;
+        });
+        if (near.length) prev = T.nearestIn(near, from);
+        return prev;
+      }
+      if (settings.accidentals && Math.random() < 0.26) {
+        const chrom = chromaticBeside(prev, from);
+        if (chrom !== prev) {
+          prev = chrom;
+          prevWasChromatic = true;
+        }
+      }
       return prev;
     };
   }
@@ -727,13 +784,13 @@
           prevChord = pitches;
         } else if (blockNext) {
           const voiced = blockNext(n);
-          pitches = voiced.pitches;
+          pitches = colorTop(voiced.pitches, settings, key, cell);
           mallets = voiced.mallets;
           prevPitch = pitches[Math.floor(pitches.length / 2)];
           prevChord = pitches;
         } else {
           const voiced = voiceBlock(n, pool, key, settings, prevChord);
-          pitches = voiced.pitches;
+          pitches = colorTop(voiced.pitches, settings, key, cell);
           mallets = voiced.mallets;
           prevPitch = pitches[Math.floor(pitches.length / 2)];
           prevChord = pitches;

@@ -107,8 +107,69 @@
     return midiToName(midi, flats) + "/" + midiOctave(midi);
   }
 
-  function letterOf(midi, flats) {
-    return midiToName(midi, flats).replace("#", "").replace("b", "");
+  const LETTERS = [
+    { L: "C", pc: 0 },
+    { L: "D", pc: 2 },
+    { L: "E", pc: 4 },
+    { L: "F", pc: 5 },
+    { L: "G", pc: 7 },
+    { L: "A", pc: 9 },
+    { L: "B", pc: 11 },
+  ];
+  const SHARP_ORDER = ["F", "C", "G", "D", "A", "E", "B"];
+  const FLAT_ORDER = ["B", "E", "A", "D", "G", "C", "F"];
+
+  function signatureAcc(letter, key) {
+    const n = key.fifths || 0;
+    if (n > 0 && SHARP_ORDER.indexOf(letter) >= 0 && SHARP_ORDER.indexOf(letter) < n) return 1;
+    if (n < 0 && FLAT_ORDER.indexOf(letter) >= 0 && FLAT_ORDER.indexOf(letter) < -n) return -1;
+    return 0;
+  }
+
+  function abcOctave(letter, oct) {
+    if (oct <= 1) return letter + ",,,";
+    if (oct === 2) return letter + ",,";
+    if (oct === 3) return letter + ",";
+    if (oct === 4) return letter;
+    if (oct === 5) return letter.toLowerCase();
+    if (oct === 6) return letter.toLowerCase() + "'";
+    if (oct === 7) return letter.toLowerCase() + "''";
+    return letter.toLowerCase() + "'''";
+  }
+
+  /* Absolute accidental against the key signature, including naturals. */
+  function spellAbc(midi, key) {
+    const pc = ((midi % 12) + 12) % 12;
+    const options = [];
+    LETTERS.forEach((item) => {
+      let acc = pc - item.pc;
+      if (acc > 6) acc -= 12;
+      if (acc < -6) acc += 12;
+      if (acc < -1 || acc > 1) return;
+      const natural = midi - acc;
+      const oct = Math.floor(natural / 12) - 1;
+      const sig = signatureAcc(item.L, key);
+      options.push({ L: item.L, acc: acc, oct: oct, sig: sig });
+    });
+    const ranked = options.slice().sort((a, b) => spellScore(b, key) - spellScore(a, key));
+    const best = ranked[0];
+    let mark = "";
+    if (best.acc !== best.sig) {
+      if (best.acc === 0) mark = "=";
+      else if (best.acc === 1) mark = "^";
+      else if (best.acc === -1) mark = "_";
+    }
+    return mark + abcOctave(best.L, best.oct);
+  }
+
+  function spellScore(opt, key) {
+    let s = 0;
+    if (opt.acc === opt.sig) s += 10;
+    if (opt.sig !== 0 && opt.acc === 0) s += 6;
+    if (key.flats && opt.acc < 0) s += 3;
+    if (!key.flats && opt.acc > 0) s += 3;
+    if (opt.acc === 0) s += 1;
+    return s;
   }
 
   /* Prefer spellings that match the key signature. */
@@ -231,6 +292,7 @@
     midiToName,
     midiToVexKey,
     spellMidi,
+    spellAbc,
     clamp,
     randInt,
     pick,
