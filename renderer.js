@@ -176,6 +176,7 @@
 
   function measureAbc(measure, score, options, time) {
     const beat = time.beatTicks || T.TICKS.quarter;
+    const events = collapseTupletRests(measure.events || []);
     let out = "";
     let beam = "";
     let acc = 0;
@@ -184,7 +185,7 @@
       if (beam) out += beam + " ";
       beam = "";
     };
-    measure.events.forEach((ev) => {
+    events.forEach((ev) => {
       let tok = eventToken(ev, score, options);
       const grouped = ev.dur.group > 1;
       const beamable = !ev.rest && ev.dur.beamable && ev.pitches && ev.pitches.length;

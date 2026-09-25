@@ -210,7 +210,8 @@
 
   function buildRhythmToggles(container, key, selected) {
     container.innerHTML = "";
-    T.DURATIONS.forEach((d) => {
+    const list = key === "rests" ? T.DURATIONS.filter((d) => !d.group) : T.DURATIONS;
+    list.forEach((d) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "chip" + (selected.includes(d.id) ? " on" : "");
@@ -221,7 +222,7 @@
         if (set.has(d.id)) {
           if (set.size > 1) set.delete(d.id);
         } else set.add(d.id);
-        settings[key] = T.DURATIONS.map((x) => x.id).filter((id) => set.has(id));
+        settings[key] = list.map((x) => x.id).filter((id) => set.has(id));
         saveSettings();
         buildRhythmToggles(container, key, settings[key]);
       });

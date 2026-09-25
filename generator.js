@@ -12,6 +12,14 @@
 
   function emitRhythm(events, choice, rest) {
     const n = choice.group || 1;
+    if (n > 1 && rest) {
+      const ticks = choice.ticks * n;
+      const plain = durById(
+        (T.DURATIONS.find((d) => !d.group && d.ticks === ticks) || {}).id
+      );
+      events.push({ dur: plain || { ticks: ticks, dots: 0, beamable: false }, rest: true });
+      return ticks;
+    }
     if (n > 1) {
       for (let i = 0; i < n; i++) {
         events.push({
@@ -28,7 +36,9 @@
 
   function buildRhythm(settings, ticks, beatTicks) {
     let allowed = settings.rhythms.map(durById).filter(Boolean);
-    const restAllowed = settings.rests.map(durById).filter(Boolean);
+    const restAllowed = settings.rests
+      .map(durById)
+      .filter((d) => d && !d.group);
     const events = [];
     let left = ticks;
     let lastWasRest = false;
