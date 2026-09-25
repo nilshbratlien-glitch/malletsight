@@ -28,11 +28,6 @@
 
   function buildRhythm(settings, ticks, beatTicks) {
     let allowed = settings.rhythms.map(durById).filter(Boolean);
-    if (settings.mallets >= 3 && settings.texture !== "melody" && settings.texture !== "mixed") {
-      const prefer = new Set(settings.texture === "chorale" ? ["w", "h", "hd", "q", "qd"] : ["h", "hd", "q", "qd", "8"]);
-      const filtered = allowed.filter((d) => prefer.has(d.id));
-      if (filtered.length) allowed = filtered;
-    }
     const restAllowed = settings.rests.map(durById).filter(Boolean);
     const events = [];
     let left = ticks;

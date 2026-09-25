@@ -64,7 +64,7 @@
     const len = durAbc(abcTicks(ev));
     let body;
     if (notes.length === 1) body = notes[0] + len;
-    else body = "[" + notes[0] + len + notes.slice(1).join("") + "]";
+    else body = "[" + notes.join("") + "]" + len;
     if (ev.tie) body += "-";
     if (ev.articulations && ev.articulations.indexOf("staccato") >= 0) body = "." + body;
     if (ev.articulations && ev.articulations.indexOf("a") >= 0) body = "!>!" + body;
