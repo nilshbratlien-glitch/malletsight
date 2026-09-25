@@ -90,111 +90,79 @@
     return T.DURATIONS.find((d) => !d.group && d.ticks === ticks) || null;
   }
 
-  function rhythmPattern(parts) {
-    const events = [];
-    for (let i = 0; i < parts.length; i++) {
-      const dur = durByTicks(parts[i][0]);
-      if (!dur) return null;
-      events.push({ dur: dur, rest: !!parts[i][1] });
-    }
-    return events;
+  function syncUnit(beat) {
+    if (beat === 36) return 12;
+    if (beat <= 12 && beat % 12 === 0) return 12;
+    if (durByTicks(beat / 2)) return beat / 2;
+    if (beat % 12 === 0) return 12;
+    return durByTicks(6) ? 6 : 0;
   }
 
-  /* Exact cover of `need` ticks, or the front of one longer note with a standard remainder. */
-  function coverSpan(events, index, need) {
-    if (index >= events.length || events[index].tuplet) return null;
-    let acc = 0;
-    let j = index;
-    while (j < events.length && acc < need) {
-      if (events[j].tuplet) return null;
-      acc += events[j].dur.ticks;
-      j++;
-    }
-    if (acc === need) {
-      const slice = events.slice(index, j);
-      return { next: j, allRest: slice.every((e) => e.rest), remainder: null };
-    }
-    if (j === index + 1 && events[index].dur.ticks > need) {
-      const restTicks = events[index].dur.ticks - need;
-      const dur = durByTicks(restTicks);
-      if (!dur) return null;
-      return {
-        next: index + 1,
-        allRest: !!events[index].rest,
-        remainder: { dur: dur, rest: !!events[index].rest },
-      };
-    }
-    return null;
-  }
-
-  function syncopationChoices(beat, allowRests) {
-    const half = beat / 2;
-    const quarter = beat / 4;
+  /* Notes that attack off the beat and are held across the next one. */
+  function syncopationCells(beat, allowRests) {
     const list = [];
-    const across = rhythmPattern([[half, false], [beat, false], [half, false]]);
-    const dotted = rhythmPattern([[beat + half, false], [half, false]]);
-    if (across) {
-      list.push(across);
-      list.push(across);
+    const unit = syncUnit(beat);
+    const span = beat * 2;
+    if (unit && span % unit === 0 && durByTicks(unit)) {
+      const dur = durByTicks(unit);
+      const n = span / unit;
+      const tied = [];
+      let pos = 0;
+      let crossed = false;
+      for (let i = 0; i < n; i++) {
+        const tie = pos + unit === beat;
+        if (tie) crossed = true;
+        tied.push({ dur: dur, rest: false, tie: tie });
+        pos += unit;
+      }
+      if (crossed) {
+        list.push(tied);
+        list.push(tied);
+      }
     }
-    if (dotted) list.push(dotted);
-    if (allowRests) {
-      const pushed = rhythmPattern([[half, true], [beat, false], [half, false]]);
-      if (pushed) list.push(pushed);
-    }
-    if (quarter >= 3 && (beat === 12 || beat === 24 || beat === 48)) {
-      const inner = rhythmPattern([[quarter, false], [half, false], [quarter, false]]);
-      if (inner) list.push(inner);
-    }
-    if (beat === 36) {
-      const compound = rhythmPattern([[12, false], [24, false]]);
-      if (compound) list.push(compound);
+    const lead = beat / 2;
+    if (durByTicks(lead) && durByTicks(beat)) {
+      list.push([
+        { dur: durByTicks(lead), rest: false, tie: false },
+        { dur: durByTicks(beat), rest: false, tie: false },
+        { dur: durByTicks(lead), rest: false, tie: false },
+      ]);
       if (allowRests) {
-        const off = rhythmPattern([[12, true], [24, false]]);
-        if (off) list.push(off);
+        list.push([
+          { dur: durByTicks(lead), rest: true, tie: false },
+          { dur: durByTicks(beat), rest: false, tie: false },
+          { dur: durByTicks(lead), rest: false, tie: false },
+        ]);
       }
     }
     return list;
   }
 
+  function fillStraight(out, ticks) {
+    let left = ticks;
+    const order = T.DURATIONS.filter((d) => !d.group && !d.dots).sort((a, b) => b.ticks - a.ticks);
+    while (left > 0) {
+      const dur = order.find((d) => d.ticks <= left);
+      if (!dur) return false;
+      out.push({ dur: dur, rest: false, tie: false });
+      left -= dur.ticks;
+    }
+    return true;
+  }
+
   function applySyncopation(events, ticks, beat, settings) {
     if (!settings.syncopation || !events.length || !beat) return events;
-    const choices = syncopationChoices(beat, !!settings.allowRests);
-    if (!choices.length) return events;
-    const chance = 0.35 + Math.min(5, settings.rhythmDensity || 3) * 0.08;
+    const cells = syncopationCells(beat, !!settings.allowRests);
+    if (!cells.length) return events;
+    const span = beat * 2;
     const out = [];
-    let i = 0;
     let pos = 0;
-    let placed = false;
-
-    while (i < events.length) {
-      const onBeat = pos % beat === 0;
-      const spans = onBeat ? [beat * 2, beat] : [];
-      const roll = !placed || Math.random() < chance;
-      let did = false;
-      if (roll) {
-        for (let s = 0; s < spans.length && !did; s++) {
-          const need = spans[s];
-          if (need > ticks - pos) continue;
-          const cover = coverSpan(events, i, need);
-          if (!cover || cover.allRest) continue;
-          const fitting = choices.filter((p) => p.reduce((n, e) => n + e.dur.ticks, 0) === need);
-          const pat = fitting.length ? T.pick(fitting) : null;
-          if (!pat) continue;
-          pat.forEach((e) => out.push({ dur: e.dur, rest: e.rest }));
-          if (cover.remainder) out.push(cover.remainder);
-          i = cover.next;
-          pos += need + (cover.remainder ? cover.remainder.dur.ticks : 0);
-          placed = true;
-          did = true;
-        }
-      }
-      if (did) continue;
-      out.push(events[i]);
-      pos += events[i].dur.ticks;
-      i++;
+    while (pos + span <= ticks) {
+      const pat = T.pick(cells);
+      pat.forEach((e) => out.push({ dur: e.dur, rest: e.rest, tie: !!e.tie }));
+      pos += span;
     }
-
+    if (pos < ticks && !fillStraight(out, ticks - pos)) return events;
     const used = out.reduce((n, e) => n + e.dur.ticks, 0);
     if (used !== ticks) return events;
     return out;
@@ -702,6 +670,7 @@
             pitches: [],
             mallets: [],
             tuplet: cell.tuplet || null,
+            syncTie: !!cell.tie,
           });
           continue;
         }
@@ -779,6 +748,7 @@
           articulations: art,
           roll,
           tie: false,
+          syncTie: !!cell.tie,
           tuplet: cell.tuplet || null,
         });
       }
@@ -801,6 +771,15 @@
             a.tie = true;
           }
         }
+      }
+
+      for (let i = 0; i < events.length - 1; i++) {
+        const a = events[i];
+        const b = events[i + 1];
+        if (!a.syncTie || a.rest || b.rest || !a.pitches || !a.pitches.length) continue;
+        b.pitches = a.pitches.slice();
+        if (a.mallets) b.mallets = a.mallets.slice();
+        a.tie = true;
       }
 
       let used = events.reduce((s, e) => s + e.dur.ticks, 0);

@@ -398,6 +398,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
           </select>
         </div>
         <label class="toggle"><span>Syncopation</span><input type="checkbox" id="syncopation" /></label>
+        <p class="hint">Holds notes across the beat, usually with a tie, so the accent is off the pulse.</p>
         <label class="toggle"><span>Ties</span><input type="checkbox" id="ties" /></label>
       </div>
 
@@ -457,7 +458,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", function () {
-        navigator.serviceWorker.register("./sw.js");
+        navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" });
       });
     }
   </script>
