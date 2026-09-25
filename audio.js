@@ -239,6 +239,10 @@
     });
   }
 
+  function quarterTicks() {
+    return (global.Theory && global.Theory.TICKS && global.Theory.TICKS.quarter) || 24;
+  }
+
   function secondsPerPulse() {
     return 60 / (tempo * subdiv);
   }
@@ -264,7 +268,7 @@
 
     while (playing && playEvents && playIndex < playEvents.length && playNextTime < now + SCHEDULE_AHEAD) {
       const ev = playEvents[playIndex++];
-      const dur = (ev.dur.ticks / 4) * (60 / tempo);
+      const dur = (ev.dur.ticks / quarterTicks()) * (60 / tempo);
       if (!ev.rest && ev.pitches && ev.pitches.length) {
         ev.pitches.forEach((p) => scheduleNote(playNextTime, p, dur));
       }
@@ -335,8 +339,8 @@
       let t = c.currentTime + 0.06;
       score.measures.forEach((m) => {
         (m.events || []).forEach((ev) => {
-          const ticks = ev.dur && ev.dur.ticks ? ev.dur.ticks : 4;
-          const dur = Math.max(0.06, (ticks / 4) * (60 / tempo));
+          const ticks = ev.dur && ev.dur.ticks ? ev.dur.ticks : quarterTicks();
+          const dur = Math.max(0.06, (ticks / quarterTicks()) * (60 / tempo));
           if (!ev.rest && ev.pitches && ev.pitches.length) {
             const instId = (score.settingsSnapshot && score.settingsSnapshot.instrument) || "mar50";
             ev.pitches.forEach((p) => {

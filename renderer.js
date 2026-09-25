@@ -27,21 +27,44 @@
     return acc + abcOctaveLetter(letter, oct);
   }
 
+  function gcd(a, b) {
+    a = Math.abs(a);
+    b = Math.abs(b);
+    while (b) {
+      const t = a % b;
+      a = b;
+      b = t;
+    }
+    return a || 1;
+  }
+
   function durAbc(ticks) {
-    if (ticks <= 1) return "";
-    return String(ticks);
+    const unit = T.TICKS.sixteenth;
+    let n = ticks;
+    let d = unit;
+    const g = gcd(n, d);
+    n /= g;
+    d /= g;
+    if (d === 1) return n === 1 ? "" : String(n);
+    if (n === 1) return "/" + d;
+    return n + "/" + d;
+  }
+
+  function abcTicks(ev) {
+    return ev.dur.writtenTicks || ev.dur.ticks;
   }
 
   function eventToken(ev, score, options) {
     if (ev.rest || !ev.pitches || !ev.pitches.length) {
-      return "z" + durAbc(ev.dur.ticks);
+      return "z" + durAbc(abcTicks(ev));
     }
     const off = T.writtenOff(score.settingsSnapshot.instrument);
     const pitches = [...new Set(ev.pitches)].sort((a, b) => a - b).map((p) => p + off);
     const notes = pitches.map((p) => midiToAbcNote(p, score.key));
+    const len = durAbc(abcTicks(ev));
     let body;
-    if (notes.length === 1) body = notes[0] + durAbc(ev.dur.ticks);
-    else body = "[" + notes[0] + durAbc(ev.dur.ticks) + notes.slice(1).join("") + "]";
+    if (notes.length === 1) body = notes[0] + len;
+    else body = "[" + notes[0] + len + notes.slice(1).join("") + "]";
     if (ev.tie) body += "-";
     if (ev.articulations && ev.articulations.indexOf("staccato") >= 0) body = "." + body;
     if (ev.articulations && ev.articulations.indexOf("a") >= 0) body = "!>!" + body;
@@ -82,23 +105,25 @@
   function packStaffEvents(events, barTicks) {
     const raw = [];
     events.forEach((ev) => {
-      if (ev.rest && raw.length && raw[raw.length - 1].rest) {
+      if (ev.rest && !ev.tuplet && raw.length && raw[raw.length - 1].rest && !raw[raw.length - 1].tuplet) {
         raw[raw.length - 1] = {
           rest: true,
           dur: { ticks: raw[raw.length - 1].dur.ticks + ev.dur.ticks },
           pitches: [],
           mallets: [],
         };
+      } else if (ev.rest && ev.tuplet) {
+        raw.push(ev);
       } else if (ev.rest) {
         raw.push({ rest: true, dur: { ticks: ev.dur.ticks }, pitches: [], mallets: [] });
       } else {
         raw.push(ev);
       }
     });
-    const units = [16, 12, 8, 6, 4, 3, 2, 1];
+    const units = T.DURATIONS.filter((d) => !d.group).map((d) => d.ticks).sort((a, b) => b - a);
     const out = [];
     raw.forEach((ev) => {
-      if (!ev.rest) {
+      if (!ev.rest || ev.tuplet) {
         out.push(ev);
         return;
       }
@@ -118,25 +143,33 @@
   }
 
   function measureAbc(measure, score, options, time) {
-    const beat = time.beatTicks || 4;
+    const beat = time.beatTicks || T.TICKS.quarter;
     let out = "";
     let beam = "";
     let acc = 0;
+    let inTuplet = false;
     const flush = () => {
       if (beam) out += beam + " ";
       beam = "";
     };
     measure.events.forEach((ev) => {
-      const tok = eventToken(ev, score, options);
-      const beamable = !ev.rest && ev.dur.ticks <= 2 && ev.pitches && ev.pitches.length;
-      if (!beamable) {
+      let tok = eventToken(ev, score, options);
+      const grouped = ev.dur.group > 1;
+      const beamable = !ev.rest && ev.dur.beamable && ev.pitches && ev.pitches.length;
+      if (grouped && ev.tuplet === "start") {
+        if (!beamable) flush();
+        tok = "(3" + tok;
+        inTuplet = true;
+      }
+      if (!grouped && !beamable) {
         flush();
         out += tok + " ";
       } else {
         beam += tok;
       }
+      if (grouped && ev.tuplet === "end") inTuplet = false;
       acc += ev.dur.ticks;
-      if (acc % beat === 0) flush();
+      if (!inTuplet && beat && acc % beat === 0) flush();
     });
     flush();
     return out.trim();
@@ -148,7 +181,7 @@
     const pitches = (ev.pitches || []).filter((p) =>
       side === "upper" ? p + off >= split : p + off < split
     );
-    if (!pitches.length) return { rest: true, dur: ev.dur, pitches: [], mallets: [] };
+    if (!pitches.length) return { rest: true, dur: ev.dur, pitches: [], mallets: [], tuplet: ev.tuplet || null };
     return Object.assign({}, ev, { pitches: pitches });
   }
 

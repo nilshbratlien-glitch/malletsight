@@ -34,27 +34,35 @@
     { id: "Fm", name: "F minor", vex: "Fm", tonic: 5, mode: "harmonic", fifths: -4, flats: true },
   ];
 
+  /* 96 ticks per whole note: 32nds and triplets share one grid. */
+  const TICKS = { whole: 96, half: 48, quarter: 24, eighth: 12, sixteenth: 6, thirtysecond: 3 };
+
   const TIMES = [
-    { id: "4/4", num: 4, den: 4, ticks: 16, simple: true, beatTicks: 4 },
-    { id: "3/4", num: 3, den: 4, ticks: 12, simple: true, beatTicks: 4 },
-    { id: "2/4", num: 2, den: 4, ticks: 8, simple: true, beatTicks: 4 },
-    { id: "2/2", num: 2, den: 2, ticks: 16, simple: true, beatTicks: 8 },
-    { id: "6/8", num: 6, den: 8, ticks: 12, simple: false, beatTicks: 6 },
-    { id: "3/8", num: 3, den: 8, ticks: 6, simple: false, beatTicks: 6 },
-    { id: "5/8", num: 5, den: 8, ticks: 10, simple: false, beatTicks: 2 },
-    { id: "7/8", num: 7, den: 8, ticks: 14, simple: false, beatTicks: 2 },
+    { id: "4/4", num: 4, den: 4, ticks: 96, simple: true, beatTicks: 24 },
+    { id: "3/4", num: 3, den: 4, ticks: 72, simple: true, beatTicks: 24 },
+    { id: "2/4", num: 2, den: 4, ticks: 48, simple: true, beatTicks: 24 },
+    { id: "2/2", num: 2, den: 2, ticks: 96, simple: true, beatTicks: 48 },
+    { id: "6/8", num: 6, den: 8, ticks: 72, simple: false, beatTicks: 36 },
+    { id: "3/8", num: 3, den: 8, ticks: 36, simple: false, beatTicks: 36 },
+    { id: "5/8", num: 5, den: 8, ticks: 60, simple: false, beatTicks: 12 },
+    { id: "7/8", num: 7, den: 8, ticks: 84, simple: false, beatTicks: 12 },
   ];
 
-  /* ticks are in sixteenths */
   const DURATIONS = [
-    { id: "w", name: "Whole", ticks: 16, vex: "w", restVex: "wr", dots: 0, beamable: false },
-    { id: "h", name: "Half", ticks: 8, vex: "h", restVex: "hr", dots: 0, beamable: false },
-    { id: "hd", name: "Dotted half", ticks: 12, vex: "hd", restVex: "hdr", dots: 1, beamable: false },
-    { id: "q", name: "Quarter", ticks: 4, vex: "q", restVex: "qr", dots: 0, beamable: false },
-    { id: "qd", name: "Dotted quarter", ticks: 6, vex: "qd", restVex: "qdr", dots: 1, beamable: false },
-    { id: "8", name: "Eighth", ticks: 2, vex: "8", restVex: "8r", dots: 0, beamable: true },
-    { id: "8d", name: "Dotted eighth", ticks: 3, vex: "8d", restVex: "8dr", dots: 1, beamable: true },
-    { id: "16", name: "Sixteenth", ticks: 1, vex: "16", restVex: "16r", dots: 0, beamable: true },
+    { id: "w", name: "Whole", ticks: 96, dots: 0, beamable: false },
+    { id: "h", name: "Half", ticks: 48, dots: 0, beamable: false },
+    { id: "hd", name: "Dotted half", ticks: 72, dots: 1, beamable: false },
+    { id: "q", name: "Quarter", ticks: 24, dots: 0, beamable: false },
+    { id: "qd", name: "Dotted quarter", ticks: 36, dots: 1, beamable: false },
+    { id: "qdd", name: "Dbl-dot quarter", ticks: 42, dots: 2, beamable: false },
+    { id: "qt", name: "Quarter triplet", ticks: 16, writtenTicks: 24, group: 3, dots: 0, beamable: false },
+    { id: "8", name: "Eighth", ticks: 12, dots: 0, beamable: true },
+    { id: "8d", name: "Dotted eighth", ticks: 18, dots: 1, beamable: true },
+    { id: "8t", name: "Eighth triplet", ticks: 8, writtenTicks: 12, group: 3, dots: 0, beamable: true },
+    { id: "16", name: "Sixteenth", ticks: 6, dots: 0, beamable: true },
+    { id: "16d", name: "Dotted 16th", ticks: 9, dots: 1, beamable: true },
+    { id: "16t", name: "16th triplet", ticks: 4, writtenTicks: 6, group: 3, dots: 0, beamable: true },
+    { id: "32", name: "32nd", ticks: 3, dots: 0, beamable: true },
   ];
 
   const LEAPS = [
@@ -215,6 +223,7 @@
     INSTRUMENTS,
     KEYS,
     TIMES,
+    TICKS,
     DURATIONS,
     LEAPS,
     scalePcs,

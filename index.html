@@ -378,7 +378,15 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 
       <div class="section">
         <h3>Rhythm</h3>
-        <p class="hint">Allowed note values</p>
+        <div class="chips key-presets" id="rhythmPresets">
+          <button type="button" class="chip" data-rhythm-preset="all">All</button>
+          <button type="button" class="chip" data-rhythm-preset="long">Long</button>
+          <button type="button" class="chip" data-rhythm-preset="simple">Simple</button>
+          <button type="button" class="chip" data-rhythm-preset="dotted">Dotted</button>
+          <button type="button" class="chip" data-rhythm-preset="triplets">Triplets</button>
+          <button type="button" class="chip" data-rhythm-preset="short">Short</button>
+        </div>
+        <p class="hint">Allowed note values. Triplets are placed as a group of three.</p>
         <div class="chips" id="rhythms"></div>
         <label class="toggle"><span>Allow rests</span><input type="checkbox" id="allowRests" /></label>
         <p class="hint">Allowed rests</p>

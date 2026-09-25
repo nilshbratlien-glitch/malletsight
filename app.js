@@ -165,6 +165,20 @@
     el.value = value;
   }
 
+  const RHYTHM_PRESETS = {
+    all: null,
+    long: ["w", "h", "hd", "q"],
+    simple: ["h", "q", "8", "16"],
+    dotted: ["hd", "qd", "qdd", "8d", "16d"],
+    triplets: ["qt", "8t", "16t"],
+    short: ["8", "16", "16d", "32", "8t", "16t"],
+  };
+
+  function rhythmPresetIds(name) {
+    if (name === "all") return T.DURATIONS.map((d) => d.id);
+    return (RHYTHM_PRESETS[name] || []).slice();
+  }
+
   function buildRhythmToggles(container, key, selected) {
     container.innerHTML = "";
     T.DURATIONS.forEach((d) => {
@@ -184,6 +198,13 @@
       });
       container.appendChild(btn);
     });
+    if (key === "rhythms") {
+      const now = selected.slice().sort().join("|");
+      document.querySelectorAll("[data-rhythm-preset]").forEach((btn) => {
+        const ids = rhythmPresetIds(btn.dataset.rhythmPreset).slice().sort().join("|");
+        btn.classList.toggle("on", ids === now);
+      });
+    }
   }
 
   function buildStopIntervalToggles() {
@@ -390,6 +411,13 @@
 
     buildRhythmToggles($("#rhythms"), "rhythms", settings.rhythms);
     buildRhythmToggles($("#rests"), "rests", settings.rests);
+    document.querySelectorAll("[data-rhythm-preset]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        settings.rhythms = rhythmPresetIds(btn.dataset.rhythmPreset);
+        saveSettings();
+        buildRhythmToggles($("#rhythms"), "rhythms", settings.rhythms);
+      });
+    });
     buildStopIntervalToggles();
     if ($("#stopPlace")) $("#stopPlace").value = settings.stopPlace || "below";
     if ($("#keysAll")) {

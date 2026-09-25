@@ -6,7 +6,27 @@
     return T.DURATIONS.find((d) => d.id === id);
   }
 
-  function buildRhythm(settings, ticks) {
+  function spanOf(d) {
+    return d.ticks * (d.group || 1);
+  }
+
+  function emitRhythm(events, choice, rest) {
+    const n = choice.group || 1;
+    if (n > 1) {
+      for (let i = 0; i < n; i++) {
+        events.push({
+          dur: choice,
+          rest: rest,
+          tuplet: i === 0 ? "start" : i === n - 1 ? "end" : "mid",
+        });
+      }
+      return choice.ticks * n;
+    }
+    events.push({ dur: choice, rest: rest });
+    return choice.ticks;
+  }
+
+  function buildRhythm(settings, ticks, beatTicks) {
     let allowed = settings.rhythms.map(durById).filter(Boolean);
     if (settings.mallets >= 3 && settings.texture !== "melody" && settings.texture !== "mixed") {
       const prefer = new Set(settings.texture === "chorale" ? ["w", "h", "hd", "q", "qd"] : ["h", "hd", "q", "qd", "8"]);
@@ -17,19 +37,20 @@
     const events = [];
     let left = ticks;
     let lastWasRest = false;
-    const beat = 4;
+    const beat = beatTicks || T.TICKS.quarter;
     const restChance =
       settings.mallets >= 3 && settings.texture !== "melody" && settings.texture !== "mixed"
         ? settings.allowRests ? 0.08 : 0
         : settings.allowRests ? 0.18 : 0;
     const density = settings.rhythmDensity;
+    const q = T.TICKS.quarter;
 
     while (left > 0) {
       const pos = ticks - left;
       const toBeat = beat - (pos % beat);
       const cap = pos % beat === 0 ? left : toBeat;
-      const noteFits = allowed.filter((d) => d.ticks <= cap);
-      const restFits = restAllowed.filter((d) => d.ticks <= cap);
+      const noteFits = allowed.filter((d) => spanOf(d) <= cap);
+      const restFits = restAllowed.filter((d) => spanOf(d) <= cap);
       const useRest =
         settings.allowRests &&
         restFits.length &&
@@ -40,16 +61,10 @@
 
       let pool = useRest ? restFits : noteFits.length ? noteFits : restFits;
       if (!pool.length) {
-        const unit = cap >= 2 ? durById("8") : durById("16");
-        if (unit && unit.ticks <= cap) {
-          events.push({ dur: unit, rest: true });
-          left -= unit.ticks;
-          lastWasRest = true;
-          continue;
-        }
-        const fill = allowed.filter((d) => d.ticks <= left)[0] || durById("16");
-        events.push({ dur: fill, rest: true });
-        left -= fill.ticks;
+        const fallback = [durById("8"), durById("16"), durById("32")].filter((d) => d && d.ticks <= cap && d.ticks <= left);
+        const unit = fallback[0];
+        if (!unit) break;
+        left -= emitRhythm(events, unit, true);
         lastWasRest = true;
         continue;
       }
@@ -58,14 +73,14 @@
       const choice = T.weightedPick(pool, (d) => {
         const shortBias = density / 5;
         const longBias = 1 - shortBias;
-        let s = longBias * d.ticks + shortBias * (17 - d.ticks) + (d.id === "q" ? 4 : 0);
-        if (onBeat && (d.ticks === 4 || d.ticks === 8)) s += 5;
-        if (!onBeat && d.ticks >= 8) s *= 0.2;
+        const span = spanOf(d);
+        let s = longBias * span + shortBias * (T.TICKS.whole + 1 - span) + (d.id === "q" ? q : 0);
+        if (onBeat && (d.id === "q" || d.id === "h")) s += q;
+        if (!onBeat && span >= T.TICKS.half) s *= 0.2;
         return s;
       });
 
-      events.push({ dur: choice, rest: useRest });
-      left -= choice.ticks;
+      left -= emitRhythm(events, choice, useRest);
       lastWasRest = useRest;
     }
     return events;
@@ -426,7 +441,7 @@
       if (settings.texture === "doublestops" || settings.texture === "mixed") {
         const base = settings.chordChance || settings.doubleStopChance || 0.28;
         const chance = settings.texture === "doublestops" ? Math.max(base, 0.7) : base;
-        const weight = cell.dur.ticks >= 4 ? 1 : cell.dur.ticks >= 2 ? 0.55 : 0.12;
+        const weight = cell.dur.ticks >= T.TICKS.quarter ? 1 : cell.dur.ticks >= T.TICKS.eighth ? 0.55 : 0.12;
         return Math.random() < chance * weight ? 2 : 1;
       }
       return 1;
@@ -434,7 +449,7 @@
     if (settings.texture === "mixed") {
       const chance = settings.chordChance == null ? 0.28 : settings.chordChance;
       /* Chords land on longer values so the line still reads as a melody. */
-      const weight = cell.dur.ticks >= 4 ? 1 : cell.dur.ticks >= 2 ? 0.45 : 0.08;
+      const weight = cell.dur.ticks >= T.TICKS.quarter ? 1 : cell.dur.ticks >= T.TICKS.eighth ? 0.45 : 0.08;
       if (Math.random() > chance * weight) return 1;
       if (settings.mallets === 3) return Math.random() < 0.7 ? 3 : 2;
       return Math.random() < 0.55 ? 3 : Math.random() < 0.5 ? 2 : 4;
@@ -560,7 +575,7 @@
         : null;
 
     for (let m = 0; m < settings.measures; m++) {
-      let rhythm = buildRhythm(settings, time.ticks);
+      let rhythm = buildRhythm(settings, time.ticks, time.beatTicks);
       rhythm = applySyncopation(rhythm, time.ticks, settings);
 
       const lastBar = m === settings.measures - 1;
@@ -578,12 +593,13 @@
             dur: cell.dur,
             pitches: [],
             mallets: [],
+            tuplet: cell.tuplet || null,
           });
           continue;
         }
 
         let n = pickNoteCount(settings, cell);
-        if (cell.dur.ticks < 4 && n > 1) n = 1;
+        if (cell.dur.ticks < T.TICKS.quarter && n > 1) n = 1;
         let pitches;
         let mallets;
         const melodyPitch = melodyNext(cell.cadence || null);
@@ -594,7 +610,7 @@
           prevPitch = melodyPitch;
           prevChord = pitches;
         } else if (twoStaff(settings) && settings.texture === "mixed") {
-          const addBass = n > 1 || cell.dur.ticks >= 4 || (cell.dur.ticks >= 2 && Math.random() < 0.55);
+          const addBass = n > 1 || cell.dur.ticks >= T.TICKS.quarter || (cell.dur.ticks >= T.TICKS.eighth && Math.random() < 0.55);
           if (addBass) {
             const voiced = addBassUnder(melodyPitch, pool, key, settings, prevBass);
             pitches = voiced.pitches;
@@ -643,7 +659,7 @@
 
         const roll =
           settings.rolls !== "off" &&
-          (settings.rolls === "always" || cell.dur.ticks >= 8) &&
+          (settings.rolls === "always" || cell.dur.ticks >= T.TICKS.half) &&
           pitches.length >= 2 &&
           Math.random() < (settings.rolls === "always" ? 0.85 : 0.45);
 
@@ -655,6 +671,7 @@
           articulations: art,
           roll,
           tie: false,
+          tuplet: cell.tuplet || null,
         });
       }
 
@@ -663,8 +680,8 @@
         for (let i = 0; i < events.length - 1; i++) {
           const a = events[i];
           const b = events[i + 1];
-          if (a.rest || b.rest) continue;
-          if (a.dur.ticks < 4 || b.dur.ticks < 4) continue;
+          if (a.rest || b.rest || a.tuplet || b.tuplet) continue;
+          if (a.dur.ticks < T.TICKS.quarter || b.dur.ticks < T.TICKS.quarter) continue;
           if (!a.pitches.length || !b.pitches.length) continue;
           if (a.pitches.length > 2 || b.pitches.length > 2) continue;
           const same =
@@ -680,12 +697,16 @@
 
       let used = events.reduce((s, e) => s + e.dur.ticks, 0);
       while (used > time.ticks && events.length) {
-        const last = events.pop();
+        let last = events.pop();
         used -= last.dur.ticks;
+        while (last.tuplet && last.tuplet !== "start" && events.length) {
+          last = events.pop();
+          used -= last.dur.ticks;
+        }
       }
       if (used < time.ticks) {
         let fill = time.ticks - used;
-        const units = T.DURATIONS.filter((d) => !d.dots).sort((a, b) => b.ticks - a.ticks);
+        const units = T.DURATIONS.filter((d) => !d.dots && !d.group).sort((a, b) => b.ticks - a.ticks);
         units.forEach((d) => {
           while (fill >= d.ticks) {
             events.push({ rest: true, dur: d, pitches: [], mallets: [] });
