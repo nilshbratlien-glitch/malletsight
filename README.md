@@ -1,10 +1,19 @@
-# Mallet Sight Reader (test)
+# Mallet Sight Reader
 
-Test copy of [malletsight](https://github.com/nilshbratlien-glitch/malletsight). Do not point the production Netlify site here.
+v1.1
 
-Keys are multi-select. One selected key is fixed. Two or more are shuffled on every Generate / New.
+Offline sight-reading trainer for keyboard percussion. All files are in one folder.
+
+## v1.1
+
+- Pick one key, or several. Several walk the circle of fifths, easiest first.
+- More rhythm values, including triplets. A triplet of rests is written as one rest.
+- Syncopation holds a note across the beat.
+- Grand staff keeps triplets in both hands.
+- Play highlights the current beat, with a one-bar count-in.
+- Easy, Medium, and Hard presets.
+- Accidentals: chromatic neighbors that step back into the key. Minor leading tones are always written.
 
 ## Netlify
 
-Import this repo as a **new** site. Publish directory: `.`  Build command: empty.
-
+Import the GitHub repo. Publish directory: `.`  Build command: empty.
