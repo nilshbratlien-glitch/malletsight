@@ -86,10 +86,118 @@
     return events;
   }
 
-  function applySyncopation(events, ticks, settings) {
-    if (!settings.syncopation || events.length < 3) return events;
-    /* Light touch: occasionally replace two quarters with 8th–quarter–8th if they fit. */
+  function durByTicks(ticks) {
+    return T.DURATIONS.find((d) => !d.group && d.ticks === ticks) || null;
+  }
+
+  function rhythmPattern(parts) {
+    const events = [];
+    for (let i = 0; i < parts.length; i++) {
+      const dur = durByTicks(parts[i][0]);
+      if (!dur) return null;
+      events.push({ dur: dur, rest: !!parts[i][1] });
+    }
     return events;
+  }
+
+  /* Exact cover of `need` ticks, or the front of one longer note with a standard remainder. */
+  function coverSpan(events, index, need) {
+    if (index >= events.length || events[index].tuplet) return null;
+    let acc = 0;
+    let j = index;
+    while (j < events.length && acc < need) {
+      if (events[j].tuplet) return null;
+      acc += events[j].dur.ticks;
+      j++;
+    }
+    if (acc === need) {
+      const slice = events.slice(index, j);
+      return { next: j, allRest: slice.every((e) => e.rest), remainder: null };
+    }
+    if (j === index + 1 && events[index].dur.ticks > need) {
+      const restTicks = events[index].dur.ticks - need;
+      const dur = durByTicks(restTicks);
+      if (!dur) return null;
+      return {
+        next: index + 1,
+        allRest: !!events[index].rest,
+        remainder: { dur: dur, rest: !!events[index].rest },
+      };
+    }
+    return null;
+  }
+
+  function syncopationChoices(beat, allowRests) {
+    const half = beat / 2;
+    const quarter = beat / 4;
+    const list = [];
+    const across = rhythmPattern([[half, false], [beat, false], [half, false]]);
+    const dotted = rhythmPattern([[beat + half, false], [half, false]]);
+    if (across) {
+      list.push(across);
+      list.push(across);
+    }
+    if (dotted) list.push(dotted);
+    if (allowRests) {
+      const pushed = rhythmPattern([[half, true], [beat, false], [half, false]]);
+      if (pushed) list.push(pushed);
+    }
+    if (quarter >= 3 && (beat === 12 || beat === 24 || beat === 48)) {
+      const inner = rhythmPattern([[quarter, false], [half, false], [quarter, false]]);
+      if (inner) list.push(inner);
+    }
+    if (beat === 36) {
+      const compound = rhythmPattern([[12, false], [24, false]]);
+      if (compound) list.push(compound);
+      if (allowRests) {
+        const off = rhythmPattern([[12, true], [24, false]]);
+        if (off) list.push(off);
+      }
+    }
+    return list;
+  }
+
+  function applySyncopation(events, ticks, beat, settings) {
+    if (!settings.syncopation || !events.length || !beat) return events;
+    const choices = syncopationChoices(beat, !!settings.allowRests);
+    if (!choices.length) return events;
+    const chance = 0.35 + Math.min(5, settings.rhythmDensity || 3) * 0.08;
+    const out = [];
+    let i = 0;
+    let pos = 0;
+    let placed = false;
+
+    while (i < events.length) {
+      const onBeat = pos % beat === 0;
+      const spans = onBeat ? [beat * 2, beat] : [];
+      const roll = !placed || Math.random() < chance;
+      let did = false;
+      if (roll) {
+        for (let s = 0; s < spans.length && !did; s++) {
+          const need = spans[s];
+          if (need > ticks - pos) continue;
+          const cover = coverSpan(events, i, need);
+          if (!cover || cover.allRest) continue;
+          const fitting = choices.filter((p) => p.reduce((n, e) => n + e.dur.ticks, 0) === need);
+          const pat = fitting.length ? T.pick(fitting) : null;
+          if (!pat) continue;
+          pat.forEach((e) => out.push({ dur: e.dur, rest: e.rest }));
+          if (cover.remainder) out.push(cover.remainder);
+          i = cover.next;
+          pos += need + (cover.remainder ? cover.remainder.dur.ticks : 0);
+          placed = true;
+          did = true;
+        }
+      }
+      if (did) continue;
+      out.push(events[i]);
+      pos += events[i].dur.ticks;
+      i++;
+    }
+
+    const used = out.reduce((n, e) => n + e.dur.ticks, 0);
+    if (used !== ticks) return events;
+    return out;
   }
 
   function pitchPool(settings, key) {
@@ -576,7 +684,7 @@
 
     for (let m = 0; m < settings.measures; m++) {
       let rhythm = buildRhythm(settings, time.ticks, time.beatTicks);
-      rhythm = applySyncopation(rhythm, time.ticks, settings);
+      rhythm = applySyncopation(rhythm, time.ticks, time.beatTicks, settings);
 
       const lastBar = m === settings.measures - 1;
       if (lastBar) {
