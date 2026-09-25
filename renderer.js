@@ -102,7 +102,39 @@
     return "treble";
   }
 
+  function collapseTupletRests(events) {
+    const out = [];
+    let i = 0;
+    while (i < events.length) {
+      if (events[i].tuplet !== "start") {
+        out.push(events[i]);
+        i++;
+        continue;
+      }
+      let j = i;
+      const group = [];
+      while (j < events.length) {
+        group.push(events[j]);
+        if (events[j].tuplet === "end") {
+          j++;
+          break;
+        }
+        j++;
+      }
+      const closed = group.length && group[group.length - 1].tuplet === "end";
+      if (closed && group.every((e) => e.rest)) {
+        const ticks = group.reduce((s, e) => s + (e.dur.ticks || 0), 0);
+        out.push({ rest: true, dur: { ticks: ticks }, pitches: [], mallets: [] });
+      } else {
+        group.forEach((e) => out.push(e));
+      }
+      i = j;
+    }
+    return out;
+  }
+
   function packStaffEvents(events, barTicks) {
+    events = collapseTupletRests(events);
     const raw = [];
     events.forEach((ev) => {
       if (ev.rest && !ev.tuplet && raw.length && raw[raw.length - 1].rest && !raw[raw.length - 1].tuplet) {

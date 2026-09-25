@@ -1,4 +1,4 @@
-const CACHE = "mallet-sr-v7";
+const CACHE = "mallet-sr-v8";
 const PRECACHE = [
   "./",
   "./index.html",

@@ -676,7 +676,7 @@
         }
 
         let n = pickNoteCount(settings, cell);
-        if (cell.dur.ticks < T.TICKS.quarter && n > 1) n = 1;
+        if (cell.dur.ticks < T.TICKS.quarter && n > 1 && !(twoStaff(settings) && cell.tuplet)) n = 1;
         let pitches;
         let mallets;
         const melodyPitch = melodyNext(cell.cadence || null);
@@ -687,7 +687,11 @@
           prevPitch = melodyPitch;
           prevChord = pitches;
         } else if (twoStaff(settings) && settings.texture === "mixed") {
-          const addBass = n > 1 || cell.dur.ticks >= T.TICKS.quarter || (cell.dur.ticks >= T.TICKS.eighth && Math.random() < 0.55);
+          const addBass =
+            n > 1 ||
+            !!cell.tuplet ||
+            cell.dur.ticks >= T.TICKS.quarter ||
+            (cell.dur.ticks >= T.TICKS.eighth && Math.random() < 0.55);
           if (addBass) {
             const voiced = addBassUnder(melodyPitch, pool, key, settings, prevBass);
             pitches = voiced.pitches;
