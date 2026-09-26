@@ -802,6 +802,60 @@
     }
   }
 
+  function plainEnding(span, endTonic) {
+    const units = [96, 72, 48, 36, 24, 12, 6, 3].map((t) => durByTicks(t)).filter(Boolean);
+    const minFinal = Math.min(span, T.TICKS.quarter);
+    const finals = units.filter((d) => d.ticks <= span && d.ticks >= minFinal);
+    const finalDur = (finals.length ? finals : units.filter((d) => d.ticks <= span))
+      .slice()
+      .sort((a, b) => b.ticks - a.ticks)[0];
+    if (!finalDur) return null;
+    const out = [];
+    let rem = span - finalDur.ticks;
+    const small = [24, 12, 6, 3].map((t) => durByTicks(t)).filter(Boolean);
+    while (rem > 0) {
+      const d = small.find((u) => u.ticks <= rem);
+      if (!d) return null;
+      out.push({ dur: d, rest: false, tuplet: null });
+      rem -= d.ticks;
+    }
+    out.push({ dur: finalDur, rest: false, tuplet: null, cadence: endTonic ? "tonic" : null });
+    if (endTonic && out.length > 1) out[out.length - 2].cadence = "approach";
+    return out;
+  }
+
+  /* The last beat is one long note, not a run of sixteenths. */
+  function settleEnding(events, ticks, beat, endTonic) {
+    if (!events.length || !ticks) return null;
+    const b = beat || T.TICKS.quarter;
+    const beats = Math.max(1, Math.round(ticks / b));
+    const want = b * (beats >= 4 ? 2 : 1);
+    const head = events.slice();
+    let freed = 0;
+    const popOne = () => {
+      if (!head.length) return false;
+      let last = head.pop();
+      freed += last.dur.ticks;
+      while (last.tuplet && last.tuplet !== "start" && head.length) {
+        last = head.pop();
+        freed += last.dur.ticks;
+      }
+      return true;
+    };
+    while (head.length && (freed < want || (b && (ticks - freed) % b !== 0))) {
+      if (!popOne()) break;
+    }
+    if (freed <= 0) return null;
+    const tail = plainEnding(freed, endTonic);
+    if (!tail) return null;
+    const out = head.concat(tail);
+    const used = out.reduce((s, e) => s + e.dur.ticks, 0);
+    if (used !== ticks) return null;
+    const last = out[out.length - 1];
+    if (!last || last.rest || last.dur.ticks < Math.min(ticks, T.TICKS.quarter)) return null;
+    return out;
+  }
+
   function generate(settings) {
     const key = resolveKey(settings);
     const time =
@@ -839,9 +893,13 @@
 
       const lastBar = m === settings.measures - 1;
       if (lastBar) {
-        const sounding = rhythm.map((ev, i) => ({ ev, i })).filter((x) => !x.ev.rest);
-        if (sounding.length) sounding[sounding.length - 1].ev.cadence = "tonic";
-        if (sounding.length > 1) sounding[sounding.length - 2].ev.cadence = "approach";
+        const settled = settleEnding(rhythm, time.ticks, time.beatTicks, settings.endTonic !== false);
+        if (settled) rhythm = settled;
+        else if (settings.endTonic !== false) {
+          const sounding = rhythm.map((ev, i) => ({ ev: ev, i: i })).filter((x) => !x.ev.rest);
+          if (sounding.length) sounding[sounding.length - 1].ev.cadence = "tonic";
+          if (sounding.length > 1) sounding[sounding.length - 2].ev.cadence = "approach";
+        }
       }
 
       const events = [];
