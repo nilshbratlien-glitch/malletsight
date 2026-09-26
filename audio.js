@@ -39,6 +39,27 @@
     return buf;
   }
 
+  let clickBus = null;
+
+  function clickOut() {
+    const c = ac();
+    if (!clickBus) {
+      clickBus = c.createGain();
+      clickBus.gain.value = clicksEnabled ? 1 : 0;
+      clickBus.connect(c.destination);
+    }
+    return clickBus;
+  }
+
+  function silenceClicks() {
+    if (!clickBus) return;
+    try {
+      clickBus.gain.setValueAtTime(0, ac().currentTime);
+      clickBus.disconnect();
+    } catch (e) {}
+    clickBus = null;
+  }
+
   let clickBuf = null;
   function getClickBuf(c) {
     if (!clickBuf) clickBuf = noiseBuffer(c, 0.04);
@@ -59,7 +80,7 @@
     g.gain.exponentialRampToValueAtTime(0.0008, time + (accent ? 0.06 : 0.035));
     src.connect(filter);
     filter.connect(g);
-    g.connect(c.destination);
+    g.connect(clickOut());
     src.start(time);
     src.stop(time + 0.07);
 
@@ -70,7 +91,7 @@
     og.gain.setValueAtTime(accent ? 0.12 : sub ? 0.03 : 0.06, time);
     og.gain.exponentialRampToValueAtTime(0.0008, time + 0.025);
     osc.connect(og);
-    og.connect(c.destination);
+    og.connect(clickOut());
     osc.start(time);
     osc.stop(time + 0.03);
   }
@@ -295,13 +316,9 @@
         const tick = clickList.shift();
         if (clicksEnabled) scheduleClick(tick.time, tick.accent, tick.sub);
       }
-      while (cueList.length && cueList[0].time < now + SCHEDULE_AHEAD) {
+      while (cueList.length && cueList[0].time <= now + 0.02) {
         const cue = cueList.shift();
-        const wait = Math.max(0, (cue.time - now) * 1000);
-        const token = cue.token;
-        setTimeout(() => {
-          if (token === playToken && playing) cue.fn();
-        }, wait);
+        if (cue.token === playToken && playing) cue.fn();
       }
       if (!clickList.length && !cueList.length && now > playEnd) {
         playing = false;
@@ -414,7 +431,6 @@
     clicksEnabled = true;
     const instId = (score && score.settingsSnapshot && score.settingsSnapshot.instrument) || "mar50";
     const qTicks = quarterTicks();
-    const beatSec = 60 / clickBpm;
     const qSec = 60 / quarterBpm;
 
     const kick = () => {
@@ -433,8 +449,11 @@
           tickPos += ev.dur && ev.dur.ticks ? ev.dur.ticks : qTicks;
         });
       });
+      const barTicks = score.time && score.time.ticks ? score.time.ticks : beats * qTicks;
+      const clickTicks = barTicks / beats;
+      const beatSec = (clickTicks / qTicks) * qSec;
       const musicSec = (tickPos / qTicks) * qSec;
-      const musicClicks = Math.max(1, Math.round(musicSec / beatSec));
+      const musicClicks = Math.max(1, Math.round(tickPos / clickTicks));
       const t0 = c.currentTime + 0.07;
       const countBeats = countIn * beats;
       const musicAt = t0 + countBeats * beatSec;
@@ -458,11 +477,8 @@
         const time = t0 + i * beatSec;
         const inCount = i < countBeats;
         const beat = inCount ? i % beats : (i - countBeats) % beats;
-        clickList.push({ time: time, accent: beat === 0, sub: false });
-        for (let s = 1; s < steps; s++) {
-          clickList.push({ time: time + (beatSec * s) / steps, accent: false, sub: true });
-        }
-        clickList.sort((a, b) => a.time - b.time);
+        scheduleClick(time, beat === 0, false);
+        for (let s = 1; s < steps; s++) scheduleClick(time + (beatSec * s) / steps, false, true);
         cueList.push({
           time: time,
           token: token,
@@ -493,6 +509,7 @@
 
   function setClicks(on) {
     clicksEnabled = !!on;
+    if (clickBus) clickBus.gain.setValueAtTime(clicksEnabled ? 1 : 0, ac().currentTime);
   }
 
   function playScore(score, bpm, done) {
@@ -512,6 +529,7 @@
       playEndTimer = null;
     }
     onPlayDone = null;
+    silenceClicks();
     cutScoreAudio();
     stopClockIfIdle();
   }

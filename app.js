@@ -760,8 +760,8 @@
 
     function metroSpec() {
       const time = currentTimeSig();
-      if (time.id === "6/8") return { beats: 2, bpm: Math.round(settings.tempo * 2 / 3) };
-      if (time.id === "2/2") return { beats: 2, bpm: Math.round(settings.tempo / 2) };
+      if (time.id === "6/8") return { beats: 2, bpm: settings.tempo * 2 / 3 };
+      if (time.id === "2/2") return { beats: 2, bpm: settings.tempo / 2 };
       if (time.den === 8) return { beats: time.num, bpm: settings.tempo * 2 };
       return { beats: time.num || 4, bpm: settings.tempo };
     }
