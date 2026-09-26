@@ -650,6 +650,17 @@
     const beatTicks = cursorBeatTicks(currentScore && currentScore.time);
     beatMap = ScoreRenderer.prepareCursor(currentVisual, settings.tempo, beatTicks) || [];
     practiceBeat = 0;
+    const line = $("#practiceLine");
+    if (line && currentScore) {
+      const idx = levelIndex();
+      const inst = T.INSTRUMENTS.find((i) => i.id === currentScore.settingsSnapshot.instrument);
+      line.textContent = [
+        idx >= 0 ? "Level " + (idx + 1) : "Custom",
+        currentScore.key && currentScore.key.name,
+        currentScore.time && currentScore.time.id,
+        inst ? inst.name : "Mallets",
+      ].filter(Boolean).join(" · ");
+    }
   }
 
   function generate() {
@@ -897,6 +908,16 @@
         },
         done: () => endPlay(metroBeforePlay),
       });
+    });
+
+    $("#btnAgain").addEventListener("click", () => {
+      if (!currentScore) return;
+      if (AudioEngine.isPlaying()) {
+        AudioEngine.stopPlayback();
+        endPlay(false);
+      }
+      applyTempo(settings.tempo - 10);
+      $("#btnPlay").click();
     });
 
     $("#btnZoomOut").addEventListener("click", () => {

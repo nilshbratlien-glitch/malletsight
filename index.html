@@ -272,6 +272,16 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .beat-lamps span.on { background: #e8c15a; box-shadow: 0 0 8px #e8c15a; }
 .beat-lamps span.down { background: #f3ead2; box-shadow: 0 0 10px #f3ead2; }
 
+.practice-line {
+  margin: 0 4px 8px;
+  min-height: 18px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @media (max-width: 720px) {
   .brand span { display: none; }
   .btn.wide-hide { padding: 0 10px; }
@@ -299,6 +309,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     </header>
 
     <main class="stage">
+      <p class="practice-line" id="practiceLine"></p>
       <div class="paper" id="score"></div>
     </main>
 
@@ -317,6 +328,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
         </div>
       </div>
       <div class="cluster">
+        <button class="btn" id="btnAgain" type="button" title="Same etude, a little slower">Again</button>
         <button class="btn primary" id="btnGenerate">Generate</button>
       </div>
     </footer>
