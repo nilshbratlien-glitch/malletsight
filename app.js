@@ -624,6 +624,12 @@
     if (typeof ScoreRenderer !== "undefined") ScoreRenderer.clearBeat();
   }
 
+  function cursorBeatTicks(time) {
+    if (!time) return 24;
+    if (time.id === "3/8") return 12;
+    return time.beatTicks || 24;
+  }
+
   function paintScore() {
     haltPlay();
     ScoreRenderer.clearBeat();
@@ -762,12 +768,6 @@
 
     function metroBpm() {
       return metroSpec().bpm;
-    }
-
-    function cursorBeatTicks(time) {
-      if (!time) return 24;
-      if (time.id === "3/8") return 12;
-      return time.beatTicks || 24;
     }
 
     function drawLamps(count) {
