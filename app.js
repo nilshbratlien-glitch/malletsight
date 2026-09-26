@@ -183,29 +183,80 @@
     return (RHYTHM_PRESETS[name] || []).slice();
   }
 
-  const DIFFICULTY = {
-    easy: { rhythms: ["h", "q"], maxLeap: 3, rhythmDensity: 1, measures: 4 },
-    medium: { rhythms: ["h", "q", "8"], maxLeap: 5, rhythmDensity: 3, measures: 8 },
-    hard: { rhythms: ["q", "qd", "8", "16", "8t"], maxLeap: 8, rhythmDensity: 5, measures: 12 },
-  };
+  const LEVELS = [
+    { rhythms: ["h", "q"], rests: ["q"], maxLeap: 2, rhythmDensity: 1, measures: 4, allowRests: false, syncopation: false, ties: false, accidentals: false, dynamics: false, hint: "Half and quarter notes. Steps only." },
+    { rhythms: ["h", "q"], rests: ["h", "q"], maxLeap: 3, rhythmDensity: 1, measures: 4, allowRests: true, syncopation: false, ties: false, accidentals: false, dynamics: false, hint: "Rests, and skips of a 3rd." },
+    { rhythms: ["h", "q", "8"], rests: ["q", "8"], maxLeap: 3, rhythmDensity: 2, measures: 4, allowRests: true, syncopation: false, ties: false, accidentals: false, dynamics: false, hint: "Eighth notes enter. Leaps stay small." },
+    { rhythms: ["hd", "h", "q", "8"], rests: ["h", "q", "8"], maxLeap: 4, rhythmDensity: 2, measures: 8, allowRests: true, syncopation: false, ties: false, accidentals: false, dynamics: false, hint: "Dotted halves. Leaps of a 4th." },
+    { rhythms: ["h", "q", "qd", "8"], rests: ["q", "8"], maxLeap: 5, rhythmDensity: 3, measures: 8, allowRests: true, syncopation: false, ties: true, accidentals: false, dynamics: false, hint: "Dotted quarters and ties. Leaps of a 5th." },
+    { rhythms: ["q", "qd", "8", "8d", "16"], rests: ["q", "8"], maxLeap: 5, rhythmDensity: 3, measures: 8, allowRests: true, syncopation: false, ties: true, accidentals: false, dynamics: false, hint: "Sixteenths and dotted eighths." },
+    { rhythms: ["q", "qd", "8", "8d", "16"], rests: ["q", "8", "16"], maxLeap: 6, rhythmDensity: 4, measures: 8, allowRests: true, syncopation: true, ties: true, accidentals: true, dynamics: true, hint: "Syncopation, accidentals, and dynamics. Leaps of a 6th." },
+    { rhythms: ["q", "qd", "8", "16", "8t"], rests: ["q", "8"], maxLeap: 6, rhythmDensity: 4, measures: 12, allowRests: true, syncopation: true, ties: true, accidentals: true, dynamics: true, hint: "Eighth-note triplets." },
+    { rhythms: ["q", "qd", "8", "8d", "16", "16d", "8t"], rests: ["q", "8", "16"], maxLeap: 8, rhythmDensity: 5, measures: 12, allowRests: true, syncopation: true, ties: true, accidentals: true, dynamics: true, hint: "Dotted sixteenths and octave leaps." },
+    { rhythms: ["q", "qd", "qdd", "8", "8d", "16", "16d", "32", "8t", "16t"], rests: ["q", "8", "16"], maxLeap: 8, rhythmDensity: 5, measures: 12, allowRests: true, syncopation: true, ties: true, accidentals: true, dynamics: true, hint: "32nds and sixteenth triplets. Full mix." },
+  ];
 
-  function difficultyName() {
-    const names = ["easy", "medium", "hard"];
-    for (let i = 0; i < names.length; i++) {
-      const p = DIFFICULTY[names[i]];
-      const same = p.rhythms.slice().sort().join("|") === (settings.rhythms || []).slice().sort().join("|");
-      if (same && p.maxLeap === settings.maxLeap && p.rhythmDensity === settings.rhythmDensity && Number(p.measures) === Number(settings.measures)) {
-        return names[i];
-      }
-    }
-    return "";
+  function sameIds(a, b) {
+    return (a || []).slice().sort().join("|") === (b || []).slice().sort().join("|");
   }
 
-  function markDifficulty() {
-    const name = difficultyName();
-    document.querySelectorAll("[data-difficulty]").forEach((btn) => {
-      btn.classList.toggle("on", btn.dataset.difficulty === name);
+  function levelIndex() {
+    for (let i = 0; i < LEVELS.length; i++) {
+      const p = LEVELS[i];
+      if (!sameIds(p.rhythms, settings.rhythms)) continue;
+      if (!sameIds(p.rests, settings.rests)) continue;
+      if (p.maxLeap !== settings.maxLeap) continue;
+      if (p.rhythmDensity !== settings.rhythmDensity) continue;
+      if (Number(p.measures) !== Number(settings.measures)) continue;
+      if (!!p.allowRests !== !!settings.allowRests) continue;
+      if (!!p.syncopation !== !!settings.syncopation) continue;
+      if (!!p.ties !== !!settings.ties) continue;
+      if (!!p.accidentals !== !!settings.accidentals) continue;
+      if (!!p.dynamics !== !!settings.dynamics) continue;
+      return i;
+    }
+    return -1;
+  }
+
+  function markLevel() {
+    const idx = levelIndex();
+    document.querySelectorAll("[data-level]").forEach((btn) => {
+      btn.classList.toggle("on", Number(btn.dataset.level) === idx + 1);
     });
+    const hint = $("#levelHint");
+    if (hint) {
+      hint.textContent = idx >= 0
+        ? "Level " + (idx + 1) + ". " + LEVELS[idx].hint
+        : "Custom mix. Choose 1–10 to set rhythms, rests, leaps, and markings.";
+    }
+  }
+
+  function applyLevel(n) {
+    const p = LEVELS[n - 1];
+    if (!p) return;
+    settings.rhythms = p.rhythms.slice();
+    settings.rests = p.rests.slice();
+    settings.maxLeap = p.maxLeap;
+    settings.rhythmDensity = p.rhythmDensity;
+    settings.measures = p.measures;
+    settings.allowRests = p.allowRests;
+    settings.syncopation = p.syncopation;
+    settings.ties = p.ties;
+    settings.accidentals = p.accidentals;
+    settings.dynamics = p.dynamics;
+    if ($("#maxLeap")) $("#maxLeap").value = String(p.maxLeap);
+    if ($("#density")) $("#density").value = String(p.rhythmDensity);
+    if ($("#measures")) $("#measures").value = String(p.measures);
+    ["allowRests", "syncopation", "ties", "accidentals", "dynamics"].forEach((k) => {
+      const el = $("#" + k);
+      if (el) el.checked = !!settings[k];
+    });
+    saveSettings();
+    buildRhythmToggles($("#rhythms"), "rhythms", settings.rhythms);
+    buildRhythmToggles($("#rests"), "rests", settings.rests);
+    markLevel();
+    openSettings(false);
+    requestAnimationFrame(() => requestAnimationFrame(generate));
   }
 
   function buildRhythmToggles(container, key, selected) {
@@ -235,7 +286,7 @@
         btn.classList.toggle("on", ids === now);
       });
     }
-    markDifficulty();
+    markLevel();
   }
 
   function buildStopIntervalToggles() {
@@ -449,23 +500,8 @@
         buildRhythmToggles($("#rhythms"), "rhythms", settings.rhythms);
       });
     });
-    document.querySelectorAll("[data-difficulty]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const p = DIFFICULTY[btn.dataset.difficulty];
-        if (!p) return;
-        settings.rhythms = p.rhythms.slice();
-        settings.maxLeap = p.maxLeap;
-        settings.rhythmDensity = p.rhythmDensity;
-        settings.measures = p.measures;
-        if ($("#maxLeap")) $("#maxLeap").value = String(p.maxLeap);
-        if ($("#density")) $("#density").value = String(p.rhythmDensity);
-        if ($("#measures")) $("#measures").value = String(p.measures);
-        saveSettings();
-        buildRhythmToggles($("#rhythms"), "rhythms", settings.rhythms);
-        markDifficulty();
-        openSettings(false);
-        requestAnimationFrame(() => requestAnimationFrame(generate));
-      });
+    document.querySelectorAll("[data-level]").forEach((btn) => {
+      btn.addEventListener("click", () => applyLevel(Number(btn.dataset.level)));
     });
     buildStopIntervalToggles();
     if ($("#stopPlace")) $("#stopPlace").value = settings.stopPlace || "below";
@@ -559,7 +595,7 @@
       settings.rangeHigh = t;
     }
     saveSettings();
-    markDifficulty();
+    markLevel();
   }
 
   function renderOptions() {

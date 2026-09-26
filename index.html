@@ -267,7 +267,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     <header class="topbar">
       <div class="brand">
         <strong>Mallet Sight Reader</strong>
-        <span>v1.1 · 2–4 mallets</span>
+        <span>v1.2 · 2–4 mallets</span>
       </div>
       <div class="spacer"></div>
       <button class="btn icon-btn" id="btnZoomOut" title="Zoom out">−</button>
@@ -339,12 +339,19 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 
       <div class="section">
         <h3>Piece</h3>
-        <div class="chips key-presets" id="difficulty">
-          <button type="button" class="chip" data-difficulty="easy">Easy</button>
-          <button type="button" class="chip" data-difficulty="medium">Medium</button>
-          <button type="button" class="chip" data-difficulty="hard">Hard</button>
+        <div class="chips key-presets level-row" id="difficulty">
+          <button type="button" class="chip" data-level="1">1</button>
+          <button type="button" class="chip" data-level="2">2</button>
+          <button type="button" class="chip" data-level="3">3</button>
+          <button type="button" class="chip" data-level="4">4</button>
+          <button type="button" class="chip" data-level="5">5</button>
+          <button type="button" class="chip" data-level="6">6</button>
+          <button type="button" class="chip" data-level="7">7</button>
+          <button type="button" class="chip" data-level="8">8</button>
+          <button type="button" class="chip" data-level="9">9</button>
+          <button type="button" class="chip" data-level="10">10</button>
         </div>
-        <p class="hint">Sets rhythms, leap, density, and measures.</p>
+        <p class="hint" id="levelHint">Levels 1–10. Each step adds a little: rhythms, rests, leaps, then ties, syncopation, accidentals, and dynamics.</p>
         <div class="row">
           <label>Keys</label>
           <span id="keyModeHint" class="hint"></span>
@@ -405,7 +412,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
           </select>
         </div>
         <label class="toggle"><span>Syncopation</span><input type="checkbox" id="syncopation" /></label>
-        <p class="hint">Holds notes across the beat, usually with a tie, so the accent is off the pulse.</p>
+        <p class="hint">Pushes one note off the beat so it holds across the next pulse. The rest of the bar keeps the rhythms you picked.</p>
         <label class="toggle"><span>Ties</span><input type="checkbox" id="ties" /></label>
       </div>
 
@@ -421,6 +428,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
             <option value="always">Often</option>
           </select>
         </div>
+        <p class="hint">Three slashes through the stem, the usual mallet roll. Long notes are halves and longer. Often includes quarters.</p>
         <div class="row"><label>Note names</label>
           <select id="annotate">
             <option value="off">Off</option>
@@ -453,7 +461,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       </div>
 
       <button class="btn primary" id="btnApply" style="width:100%;margin-top:8px">Generate with these settings</button>
-      <p class="hint" style="text-align:center;margin-top:14px">Mallet Sight Reader v1.1</p>
+      <p class="hint" style="text-align:center;margin-top:14px">Mallet Sight Reader v1.2</p>
     </div>
   </aside>
 
