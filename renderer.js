@@ -58,6 +58,7 @@
     if (ev.tie) body += "-";
     if (ev.articulations && ev.articulations.indexOf("staccato") >= 0) body = "." + body;
     if (ev.articulations && ev.articulations.indexOf("a") >= 0) body = "!>!" + body;
+    if (ev.roll) body = "!///!" + body;
     if (options.showSticking && ev.mallets && ev.mallets.length) {
       body = '"' + ev.mallets.join("") + '"' + body;
     }
@@ -177,12 +178,15 @@
     };
     events.forEach((ev) => {
       let tok = eventToken(ev, score, options);
+      const prefix = markingPrefix(ev);
       const grouped = ev.dur.group > 1;
       const beamable = !ev.rest && ev.dur.beamable && ev.pitches && ev.pitches.length;
+      if (prefix) flush();
       if (grouped && ev.tuplet === "start") {
-        if (!beamable) flush();
-        tok = "(3" + tok;
+        tok = prefix + "(3" + tok;
         inTuplet = true;
+      } else if (prefix) {
+        tok = prefix + tok;
       }
       if (!grouped && !beamable) {
         flush();
@@ -205,7 +209,25 @@
       side === "upper" ? p + off >= split : p + off < split
     );
     if (!pitches.length) return { rest: true, dur: ev.dur, pitches: [], mallets: [], tuplet: ev.tuplet || null };
-    return Object.assign({}, ev, { pitches: pitches });
+    const copy = Object.assign({}, ev, { pitches: pitches });
+    if (side === "lower") {
+      const upperHas = (ev.pitches || []).some((p) => p + off >= split);
+      if (upperHas) {
+        copy.dynamic = null;
+        copy.hairpin = null;
+      }
+    }
+    return copy;
+  }
+
+  function markingPrefix(ev) {
+    let prefix = "";
+    if (ev.hairpin === "cresc-start") prefix += "!<(!";
+    else if (ev.hairpin === "dim-start") prefix += "!>(!";
+    else if (ev.hairpin === "cresc-end") prefix += "!<)!";
+    else if (ev.hairpin === "dim-end") prefix += "!>)!";
+    if (ev.dynamic) prefix += "!" + ev.dynamic + "!";
+    return prefix;
   }
 
   function scoreToAbc(score, options) {

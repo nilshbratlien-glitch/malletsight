@@ -200,7 +200,29 @@
     }
   }
 
-  function scheduleNote(time, midi, durSec, instId) {
+  function scheduleStrike(time, midi, instId, gain) {
+    const c = ac();
+    if (time < c.currentTime) time = c.currentTime;
+    const spec = MALLET_VOICE[instId] || MALLET_VOICE.mar50;
+    const f0 = midiToFreq(midi);
+    const strike = c.createBufferSource();
+    strike.buffer = getClickBuf(c);
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = Math.min(8000, f0 * spec.brightness * 3.2);
+    bp.Q.value = 1.4;
+    const sg = c.createGain();
+    sg.gain.setValueAtTime(spec.hardness * gain, time);
+    sg.gain.exponentialRampToValueAtTime(0.001, time + 0.03);
+    strike.connect(bp);
+    bp.connect(sg);
+    sg.connect(scoreOut());
+    strike.start(time);
+    strike.stop(time + 0.04);
+    trackNode(strike);
+  }
+
+  function scheduleNote(time, midi, durSec, instId, roll) {
     const c = ac();
     if (time < c.currentTime) time = c.currentTime;
     const spec = MALLET_VOICE[instId] || MALLET_VOICE.mar50;
@@ -209,23 +231,19 @@
     const decay = spec.decay * (low ? 1.45 : midi > 84 ? 0.7 : 1) * Math.max(0.55, Math.min(1.2, durSec / 0.4));
     const dest = scoreOut();
 
-    const strike = c.createBufferSource();
-    strike.buffer = getClickBuf(c);
-    const bp = c.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.frequency.value = Math.min(8000, f0 * spec.brightness * 3.2);
-    bp.Q.value = 1.4;
-    const sg = c.createGain();
-    sg.gain.setValueAtTime(spec.hardness, time);
-    sg.gain.exponentialRampToValueAtTime(0.001, time + 0.03);
-    strike.connect(bp);
-    bp.connect(sg);
-    sg.connect(dest);
-    strike.start(time);
-    strike.stop(time + 0.04);
-    trackNode(strike);
+    scheduleStrike(time, midi, instId, 1);
+    if (roll && durSec > 0.2) {
+      const gap = 0.07;
+      for (let t = time + gap; t < time + durSec - 0.03; t += gap) scheduleStrike(t, midi, instId, 0.55);
+    }
 
-    if (playSample(time, midi, instId)) return;
+    if (playSample(time, midi, instId)) {
+      if (roll && durSec > 0.2) {
+        const gap = 0.07;
+        for (let t = time + gap; t < time + durSec - 0.03; t += gap) playSample(t, midi, instId);
+      }
+      return;
+    }
 
     spec.ratios.forEach((ratio, i) => {
       const o = c.createOscillator();
@@ -398,7 +416,7 @@
         const dur = Math.max(0.05, ((ev.dur && ev.dur.ticks ? ev.dur.ticks : qTicks) / qTicks) * qSec);
         if (!ev.rest && ev.pitches && ev.pitches.length) {
           ev.pitches.forEach((p) => {
-            try { scheduleNote(when, p, dur, instId); } catch (err) {}
+            try { scheduleNote(when, p, dur, instId, !!ev.roll); } catch (err) {}
           });
         }
       });

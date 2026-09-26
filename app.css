@@ -209,6 +209,7 @@ select, .field {
 }
 .key-presets { margin: 0 0 8px; }
 .key-presets .chip { min-height: 32px; font-size: 13px; }
+.level-row .chip { min-width: 36px; padding: 0; text-align: center; }
 #keyModeHint { text-align: right; }
 
 .toggle {

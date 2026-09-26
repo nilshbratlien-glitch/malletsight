@@ -692,6 +692,37 @@
     return ordered[idx];
   }
 
+  function applyDynamics(measures, settings) {
+    if (!settings.dynamics) return;
+    const notes = [];
+    measures.forEach((m) => {
+      m.events.forEach((e) => {
+        if (!e.rest && e.pitches && e.pitches.length) notes.push(e);
+      });
+    });
+    if (!notes.length) return;
+    const ladder = ["p", "mp", "mf", "f"];
+    let step = 1 + (Math.random() < 0.5 ? 1 : 0);
+    notes[0].dynamic = ladder[step];
+    function hairpin(from, to, up) {
+      if (to <= from || to >= notes.length) return;
+      notes[from].hairpin = up ? "cresc-start" : "dim-start";
+      notes[to].hairpin = up ? "cresc-end" : "dim-end";
+      step = Math.max(0, Math.min(ladder.length - 1, step + (up ? 1 : -1)));
+      notes[to].dynamic = ladder[step];
+    }
+    if (notes.length >= 6) {
+      const a = Math.min(2, notes.length - 4);
+      const b = Math.min(notes.length - 2, a + 3 + Math.floor(Math.random() * 2));
+      hairpin(a, b, step < 2);
+    }
+    if (notes.length >= 14) {
+      const a = Math.floor(notes.length * 0.55);
+      const b = Math.min(notes.length - 1, a + 4);
+      hairpin(a, b, step < 2);
+    }
+  }
+
   function generate(settings) {
     const key = resolveKey(settings);
     const time =
@@ -802,9 +833,14 @@
 
         const roll =
           settings.rolls !== "off" &&
-          (settings.rolls === "always" || cell.dur.ticks >= T.TICKS.half) &&
-          pitches.length >= 2 &&
-          Math.random() < (settings.rolls === "always" ? 0.85 : 0.45);
+          !cell.tuplet &&
+          pitches.length >= 1 &&
+          (settings.rolls === "always"
+            ? cell.dur.ticks >= T.TICKS.quarter
+            : cell.dur.ticks >= T.TICKS.half) &&
+          Math.random() < (settings.rolls === "always"
+            ? (cell.dur.ticks >= T.TICKS.half ? 0.8 : 0.45)
+            : 0.8);
 
         events.push({
           rest: false,
@@ -870,15 +906,7 @@
       measures.push({ events });
     }
 
-    /* Dynamics markings */
-    const dynamics = [];
-    if (settings.dynamics) {
-      const marks = ["p", "mp", "mf", "f"];
-      dynamics.push({ measure: 0, event: 0, mark: T.pick(marks) });
-      if (settings.measures >= 6 && Math.random() < 0.6) {
-        dynamics.push({ measure: Math.floor(settings.measures / 2), event: 0, mark: T.pick(["crescendo", "dim", "mf", "f", "p"]) });
-      }
-    }
+    applyDynamics(measures, settings);
 
     let clef = settings.clef;
     const writeOff = T.writtenOff(settings.instrumentId);
@@ -922,7 +950,6 @@
       time,
       clef,
       measures,
-      dynamics,
       settingsSnapshot: {
         mallets: settings.mallets,
         texture: settings.texture,
