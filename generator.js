@@ -34,77 +34,50 @@
     return choice.ticks;
   }
 
-  function cellWeight(ids, density, ticks) {
-    const shortest = Math.min.apply(
-      null,
-      ids.map((id) => durById(id).ticks)
-    );
-    const step = ids.reduce((sum, id) => sum + spanOf(durById(id)), 0);
-    let w = 1;
-    if (shortest <= 4) w = density >= 5 ? 2.2 : 0.2;
-    else if (shortest <= 6) w = density >= 4 ? 2.4 : 0.35;
-    else if (shortest <= 8) w = density >= 3 ? 2 : 0.4;
-    else if (shortest <= 12) w = 2;
-    else w = density <= 2 ? 3 : 1;
-    if (ids.length > 1) w *= 1.3;
-    if (step === ticks && shortest >= T.TICKS.half) w *= 0.35;
-    return w;
+  function idsSpan(ids) {
+    return ids.reduce((sum, id) => sum + spanOf(durById(id)), 0);
   }
 
-  function tileCell(ids, ticks, allowRests) {
-    const events = [];
-    const step = ids.reduce((sum, id) => sum + spanOf(durById(id)), 0);
-    let pos = 0;
-    let rested = false;
-    while (pos + step <= ticks) {
-      for (let i = 0; i < ids.length; i++) {
-        const d = durById(ids[i]);
-        const canRest =
-          allowRests &&
-          !rested &&
-          pos > 0 &&
-          !d.group &&
-          d.ticks >= T.TICKS.quarter &&
-          Math.random() < 0.16;
-        if (canRest) rested = true;
-        pos += emitRhythm(events, d, canRest);
-      }
-    }
-    return events;
+  function featureOf(ids) {
+    if (ids.some((id) => id === "8t" || id === "qt")) return "8t";
+    if (ids.some((id) => id === "16t")) return "16t";
+    if (ids.some((id) => id === "32")) return "32";
+    if (ids.some((id) => id === "16" || id === "8d" || id === "16d")) return "16";
+    if (ids.some((id) => id === "qd" || id === "qdd" || id === "hd")) return "dot";
+    return "plain";
   }
 
-  function soundingKey(ids, ticks) {
-    const step = ids.reduce((sum, id) => sum + spanOf(durById(id)), 0);
-    const seq = [];
-    let pos = 0;
-    while (pos + step <= ticks) {
-      ids.forEach((id) => {
-        const d = durById(id);
-        const n = d.group || 1;
-        for (let i = 0; i < n; i++) seq.push(d.id);
-        pos += spanOf(d);
-      });
-    }
-    return seq.join(".");
+  function featureWeight(name, density) {
+    if (name === "plain") return 2.2;
+    if (name === "dot") return 1.6;
+    if (name === "16") return density >= 4 ? 1.8 : 0.45;
+    if (name === "8t") return density >= 3 ? 1.5 : 0.4;
+    if (name === "16t" || name === "32") return density >= 5 ? 1.3 : 0.25;
+    return 1;
   }
 
-  function buildRhythm(settings, ticks, beatTicks, avoidKeys) {
-    const allowed = settings.rhythms.map(durById).filter(Boolean);
-    const allowedIds = allowed.map((d) => d.id);
-    const has = (id) => allowedIds.indexOf(id) >= 0;
-    const density = settings.rhythmDensity || 3;
+  function asCell(ids) {
+    return { ids: ids, key: ids.join("."), feature: featureOf(ids), span: idsSpan(ids) };
+  }
+
+  function cellsFitting(has, span) {
     const catalog = [
-      ["w"],
-      ["hd"],
-      ["h"],
       ["q"],
       ["8"],
       ["8", "8"],
+      ["8", "8", "8"],
+      ["8", "8", "8", "8"],
+      ["q", "q"],
       ["q", "8", "8"],
       ["8", "8", "q"],
-      ["8", "8", "8"],
+      ["h"],
+      ["hd"],
+      ["w"],
+      ["qd"],
       ["qd", "8"],
       ["qd", "8", "8", "8"],
+      ["q", "8"],
+      ["8", "q"],
       ["8d", "16"],
       ["16", "8d"],
       ["16", "16"],
@@ -116,40 +89,150 @@
       ["32", "32", "32", "32", "32", "32", "32", "32"],
       ["8t"],
       ["16t"],
+      ["16t", "16t"],
       ["qt"],
       ["qdd", "16"],
     ];
-    const cells = catalog.filter((ids) => {
-      if (!ids.every(has)) return false;
-      const step = ids.reduce((sum, id) => sum + spanOf(durById(id)), 0);
-      return step > 0 && step <= ticks && ticks % step === 0;
+    return catalog.filter((ids) => ids.every(has) && idsSpan(ids) === span).map(asCell);
+  }
+
+  function pickCell(list, density) {
+    return T.weightedPick(list, (cell) => {
+      const shortest = Math.min.apply(
+        null,
+        cell.ids.map((id) => durById(id).ticks)
+      );
+      let w = shortest <= 8 ? 1.35 : shortest <= 12 ? 1.15 : 1;
+      if (cell.ids.length > 1) w *= 1.25;
+      if (cell.feature !== "plain" && density < 3) w *= 0.45;
+      return w;
     });
-    const unique = [];
-    const seen = {};
-    cells.forEach((ids) => {
-      const key = soundingKey(ids, ticks);
-      if (!key || seen[key]) return;
-      seen[key] = 1;
-      unique.push({ ids: ids, key: key });
+  }
+
+  function buildVaried(has, ticks, beat, density, allowRests, avoidKeys) {
+    if (!beat || ticks % beat !== 0) return null;
+    const beats = ticks / beat;
+    const beatList = cellsFitting(has, beat);
+    const halfList = beats >= 2 ? cellsFitting(has, beat * 2) : [];
+    const barList = cellsFitting(has, ticks).filter((cell) => cell.ids.length > 1);
+    const features = {};
+    beatList.concat(halfList, barList).forEach((cell) => {
+      features[cell.feature] = 1;
     });
-    const blocked = avoidKeys || [];
-    let pool = unique;
-    if (unique.length > 1 && blocked.length) {
-      const next = unique.filter((cell) => blocked.indexOf(cell.key) < 0);
-      if (next.length) pool = next;
+    const names = Object.keys(features);
+    if (!names.length) return null;
+
+    function once() {
+      const feature = T.weightedPick(names, (name) => featureWeight(name, density));
+      const ok = (cell) => cell.feature === "plain" || cell.feature === feature;
+      const beatsOk = beatList.filter(ok);
+      const halvesOk = halfList.filter(ok);
+      const barsOk = barList.filter(ok);
+      if (!beatsOk.length && !halvesOk.length && !barsOk.length) return null;
+
+      function takeBeat(differ) {
+        const pool = differ && beatsOk.length > 1 ? beatsOk.filter((cell) => cell.key !== differ) : beatsOk;
+        return pickCell(pool.length ? pool : beatsOk, density);
+      }
+      function oneHalf() {
+        if (halvesOk.length && (!beatsOk.length || Math.random() < 0.6)) return [pickCell(halvesOk, density)];
+        const a = takeBeat();
+        return [a, a];
+      }
+
+      let parts = [];
+      if (barsOk.length && Math.random() < 0.3) {
+        parts = [pickCell(barsOk, density)];
+      } else if (beats === 4 && (halvesOk.length || beatsOk.length)) {
+        const left = oneHalf();
+        let right = oneHalf();
+        const leftKey = left.map((cell) => cell.key).join("|");
+        let guard = 0;
+        while (right.map((cell) => cell.key).join("|") === leftKey && halvesOk.length + beatsOk.length > 1 && guard < 6) {
+          right = oneHalf();
+          guard++;
+        }
+        parts = left.concat(right);
+      } else if (beats === 2 && (halvesOk.length || beatsOk.length)) {
+        if (halvesOk.length && (!beatsOk.length || Math.random() < 0.4)) parts = [pickCell(halvesOk, density)];
+        else {
+          const a = takeBeat();
+          parts = [a, takeBeat(a.key)];
+        }
+      } else if (beatsOk.length && (beats === 5 || beats === 7)) {
+        const group = beats === 5 ? (Math.random() < 0.5 ? [2, 3] : [3, 2]) : Math.random() < 0.5 ? [2, 2, 3] : [3, 2, 2];
+        let prev = null;
+        group.forEach((len) => {
+          const cell = takeBeat(prev);
+          for (let i = 0; i < len; i++) parts.push(cell);
+          prev = cell.key;
+        });
+      } else if (beatsOk.length) {
+        const a = takeBeat();
+        for (let i = 0; i < beats; i++) parts.push(a);
+        if (beats > 1) {
+          const other = takeBeat(a.key);
+          if (other.key !== a.key) {
+            parts[beats - 1] = other;
+            if (beats >= 3 && Math.random() < 0.45) parts[beats - 2] = other;
+          }
+        }
+      }
+      if (!parts.length) return null;
+      if (feature !== "plain" && !parts.some((cell) => cell.feature === feature)) {
+        const feat = beatsOk.concat(halvesOk, barsOk).filter((cell) => cell.feature === feature);
+        const swap = feat.length ? pickCell(feat, density) : null;
+        if (swap) {
+          const idx = parts.findIndex((cell) => cell.span === swap.span);
+          if (idx >= 0) parts[idx] = swap;
+        }
+      }
+      const span = parts.reduce((sum, cell) => sum + cell.span, 0);
+      if (span !== ticks) return null;
+      const events = [];
+      const restState = { pos: 0, used: false };
+      parts.forEach((cell) => emitIds(events, cell.ids, allowRests, restState));
+      const used = events.reduce((sum, event) => sum + event.dur.ticks, 0);
+      if (used !== ticks) return null;
+      const ids = parts.reduce((list, cell) => list.concat(cell.ids), []);
+      const straight = { q: 1, h: 1, hd: 1, w: 1, "8": 1 };
+      events.syncOk = ids.every((id) => straight[id]);
+      events.cellKey = events.map((event) => (event.rest ? "z" : "") + event.dur.id).join(".");
+      return events;
     }
 
-    if (pool.length) {
-      const chosen = T.weightedPick(pool, (cell) => cellWeight(cell.ids, density, ticks));
-      const events = tileCell(chosen.ids, ticks, !!settings.allowRests);
-      const used = events.reduce((sum, e) => sum + e.dur.ticks, 0);
-      if (used === ticks) {
-        const straight = { q: 1, h: 1, hd: 1, w: 1, "8": 1 };
-        events.syncOk = chosen.ids.every((id) => straight[id]);
-        events.cellKey = chosen.key;
-        return events;
-      }
+    function emitIds(events, ids, allow, restState) {
+      ids.forEach((id) => {
+        const d = durById(id);
+        const canRest =
+          allow &&
+          restState.pos > 0 &&
+          !restState.used &&
+          !d.group &&
+          d.ticks >= T.TICKS.quarter &&
+          Math.random() < 0.12;
+        if (canRest) restState.used = true;
+        restState.pos += emitRhythm(events, d, canRest);
+      });
     }
+
+    let last = null;
+    const blocked = avoidKeys || [];
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const built = once();
+      if (!built) continue;
+      last = built;
+      if (blocked.indexOf(built.cellKey) < 0) return built;
+    }
+    return last;
+  }
+
+  function buildRhythm(settings, ticks, beatTicks, avoidKeys) {
+    const allowed = settings.rhythms.map(durById).filter(Boolean);
+    const has = (id) => allowed.some((d) => d.id === id);
+    const density = settings.rhythmDensity || 3;
+    const varied = buildVaried(has, ticks, beatTicks || T.TICKS.quarter, density, !!settings.allowRests, avoidKeys);
+    if (varied) return varied;
 
     const restAllowed = settings.rests
       .map(durById)
