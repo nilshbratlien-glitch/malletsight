@@ -363,7 +363,7 @@
     const beatMs = ((beatTicks || 24) / 24) * (60000 / bpm);
     if (!beatMs) return [];
     let timings = [];
-    try { timings = visual.setTiming(bpm, 0) || []; } catch (err) { return []; }
+    try { timings = visual.setTiming(0, 0) || []; } catch (err) { return []; }
     const beats = [];
     timings.forEach((ev) => {
       if (!ev || ev.type !== "event") return;

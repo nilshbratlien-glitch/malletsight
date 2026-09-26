@@ -628,7 +628,7 @@
     haltPlay();
     ScoreRenderer.clearBeat();
     currentVisual = ScoreRenderer.renderScore($("#score"), currentScore, renderOptions());
-    const beatTicks = currentScore && currentScore.time ? currentScore.time.beatTicks : 24;
+    const beatTicks = cursorBeatTicks(currentScore && currentScore.time);
     beatMap = ScoreRenderer.prepareCursor(currentVisual, settings.tempo, beatTicks) || [];
     practiceBeat = 0;
   }
@@ -764,6 +764,12 @@
       return metroSpec().bpm;
     }
 
+    function cursorBeatTicks(time) {
+      if (!time) return 24;
+      if (time.id === "3/8") return 12;
+      return time.beatTicks || 24;
+    }
+
     function drawLamps(count) {
       const box = $("#beatLamps");
       if (!box) return;
@@ -853,7 +859,7 @@
       AudioEngine.ac();
       const spec = metroSpec();
       drawLamps(spec.beats);
-      beatMap = ScoreRenderer.prepareCursor(currentVisual, settings.tempo, currentScore.time.beatTicks) || [];
+      beatMap = ScoreRenderer.prepareCursor(currentVisual, settings.tempo, cursorBeatTicks(currentScore.time)) || [];
       $("#btnPlay").classList.add("on");
       $("#btnPlay").textContent = "1";
       $("#btnMetro").classList.add("on");
