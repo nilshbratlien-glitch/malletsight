@@ -73,7 +73,22 @@
     return events;
   }
 
-  function buildRhythm(settings, ticks, beatTicks) {
+  function soundingKey(ids, ticks) {
+    const step = ids.reduce((sum, id) => sum + spanOf(durById(id)), 0);
+    const seq = [];
+    let pos = 0;
+    while (pos + step <= ticks) {
+      ids.forEach((id) => {
+        const d = durById(id);
+        const n = d.group || 1;
+        for (let i = 0; i < n; i++) seq.push(d.id);
+        pos += spanOf(d);
+      });
+    }
+    return seq.join(".");
+  }
+
+  function buildRhythm(settings, ticks, beatTicks, avoidKeys) {
     const allowed = settings.rhythms.map(durById).filter(Boolean);
     const allowedIds = allowed.map((d) => d.id);
     const has = (id) => allowedIds.indexOf(id) >= 0;
@@ -109,14 +124,29 @@
       const step = ids.reduce((sum, id) => sum + spanOf(durById(id)), 0);
       return step > 0 && step <= ticks && ticks % step === 0;
     });
+    const unique = [];
+    const seen = {};
+    cells.forEach((ids) => {
+      const key = soundingKey(ids, ticks);
+      if (!key || seen[key]) return;
+      seen[key] = 1;
+      unique.push({ ids: ids, key: key });
+    });
+    const blocked = avoidKeys || [];
+    let pool = unique;
+    if (unique.length > 1 && blocked.length) {
+      const next = unique.filter((cell) => blocked.indexOf(cell.key) < 0);
+      if (next.length) pool = next;
+    }
 
-    if (cells.length) {
-      const ids = T.weightedPick(cells, (cell) => cellWeight(cell, density, ticks));
-      const events = tileCell(ids, ticks, !!settings.allowRests);
+    if (pool.length) {
+      const chosen = T.weightedPick(pool, (cell) => cellWeight(cell.ids, density, ticks));
+      const events = tileCell(chosen.ids, ticks, !!settings.allowRests);
       const used = events.reduce((sum, e) => sum + e.dur.ticks, 0);
       if (used === ticks) {
         const straight = { q: 1, h: 1, hd: 1, w: 1, "8": 1 };
-        events.syncOk = ids.every((id) => straight[id]);
+        events.syncOk = chosen.ids.every((id) => straight[id]);
+        events.cellKey = chosen.key;
         return events;
       }
     }
@@ -998,8 +1028,7 @@
     let prevPitch = null;
     let prevChord = null;
     let prevBass = null;
-    let motif = null;
-    let motifLeft = 0;
+    const recentRhythms = [];
     const lineMem = { stop: null };
     const blockNext =
       settings.texture === "block" || settings.texture === "chorale"
@@ -1007,16 +1036,9 @@
         : null;
 
     for (let m = 0; m < settings.measures; m++) {
-      let rhythm;
-      if (motif && motifLeft > 0 && m !== settings.measures - 1) {
-        rhythm = motif.map((e) => ({ dur: e.dur, rest: e.rest, tuplet: e.tuplet || null, tie: !!e.tie }));
-        motifLeft--;
-      } else {
-        rhythm = buildRhythm(settings, time.ticks, time.beatTicks);
-        if (rhythm.syncOk) rhythm = applySyncopation(rhythm, time.ticks, time.beatTicks, settings);
-        motif = rhythm.map((e) => ({ dur: e.dur, rest: e.rest, tuplet: e.tuplet || null, tie: !!e.tie }));
-        motifLeft = 1;
-      }
+      let rhythm = buildRhythm(settings, time.ticks, time.beatTicks, recentRhythms.slice(-2));
+      if (rhythm.cellKey) recentRhythms.push(rhythm.cellKey);
+      if (rhythm.syncOk) rhythm = applySyncopation(rhythm, time.ticks, time.beatTicks, settings);
 
       const lastBar = m === settings.measures - 1;
       const phraseEnd = (m + 1) % 4 === 0;
