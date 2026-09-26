@@ -856,6 +856,55 @@
     return out;
   }
 
+  /* Every fourth bar lets the phrase land, then rests for one beat. */
+  function phraseBreath(events, ticks, beat, asRest, endTonic) {
+    if (!events.length || !ticks) return null;
+    const b = beat || T.TICKS.quarter;
+    let span = b >= T.TICKS.quarter ? b : Math.min(ticks, T.TICKS.quarter);
+    let cut = ticks - span;
+    if (b && cut % b !== 0) {
+      cut -= cut % b;
+      span = ticks - cut;
+    }
+    if (cut <= 0 || span <= 0 || span >= ticks) return null;
+    const sliced = cutAround(events, cut, ticks);
+    let head = sliced && sliced.before;
+    let freed = span;
+    if (!head) {
+      head = events.slice();
+      freed = 0;
+      const popOne = () => {
+        if (!head.length) return false;
+        let last = head.pop();
+        freed += last.dur.ticks;
+        while (last.tuplet && last.tuplet !== "start" && head.length) {
+          last = head.pop();
+          freed += last.dur.ticks;
+        }
+        return true;
+      };
+      while (head.length && (freed < span || (b && (ticks - freed) % b !== 0))) {
+        if (!popOne()) break;
+      }
+      if (freed <= 0 || freed >= ticks) return null;
+    }
+    const dur = durByTicks(freed);
+    if (!dur) return null;
+    const tail = { dur: dur, rest: !!asRest, tuplet: null, cadence: !asRest && endTonic ? "tonic" : null };
+    const out = head.concat([tail]);
+    if (asRest && endTonic) {
+      for (let i = out.length - 2; i >= 0; i--) {
+        if (!out[i].rest) {
+          out[i].cadence = "tonic";
+          break;
+        }
+      }
+    }
+    const used = out.reduce((s, e) => s + e.dur.ticks, 0);
+    if (used !== ticks) return null;
+    return out;
+  }
+
   function generate(settings) {
     const key = resolveKey(settings);
     const time =
@@ -892,6 +941,7 @@
       }
 
       const lastBar = m === settings.measures - 1;
+      const phraseEnd = (m + 1) % 4 === 0;
       if (lastBar) {
         const settled = settleEnding(rhythm, time.ticks, time.beatTicks, settings.endTonic !== false);
         if (settled) rhythm = settled;
@@ -900,6 +950,15 @@
           if (sounding.length) sounding[sounding.length - 1].ev.cadence = "tonic";
           if (sounding.length > 1) sounding[sounding.length - 2].ev.cadence = "approach";
         }
+      } else if (phraseEnd) {
+        const breathed = phraseBreath(
+          rhythm,
+          time.ticks,
+          time.beatTicks,
+          !!settings.allowRests,
+          settings.endTonic !== false
+        );
+        if (breathed) rhythm = breathed;
       }
 
       const events = [];
