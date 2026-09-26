@@ -1,6 +1,6 @@
 # Mallet Sight Reader
 
-v1.2 is on the `test` branch. v1.1 is what Netlify serves from `main`.
+v1.2 is what Netlify serves from `main`. The `test` branch matches it.
 
 ## v1.2
 
