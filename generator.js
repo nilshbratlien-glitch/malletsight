@@ -34,8 +34,93 @@
     return choice.ticks;
   }
 
+  function cellWeight(ids, density, ticks) {
+    const shortest = Math.min.apply(
+      null,
+      ids.map((id) => durById(id).ticks)
+    );
+    const step = ids.reduce((sum, id) => sum + spanOf(durById(id)), 0);
+    let w = 1;
+    if (shortest <= 4) w = density >= 5 ? 2.2 : 0.2;
+    else if (shortest <= 6) w = density >= 4 ? 2.4 : 0.35;
+    else if (shortest <= 8) w = density >= 3 ? 2 : 0.4;
+    else if (shortest <= 12) w = 2;
+    else w = density <= 2 ? 3 : 1;
+    if (ids.length > 1) w *= 1.3;
+    if (step === ticks && shortest >= T.TICKS.half) w *= 0.35;
+    return w;
+  }
+
+  function tileCell(ids, ticks, allowRests) {
+    const events = [];
+    const step = ids.reduce((sum, id) => sum + spanOf(durById(id)), 0);
+    let pos = 0;
+    let rested = false;
+    while (pos + step <= ticks) {
+      for (let i = 0; i < ids.length; i++) {
+        const d = durById(ids[i]);
+        const canRest =
+          allowRests &&
+          !rested &&
+          pos > 0 &&
+          !d.group &&
+          d.ticks >= T.TICKS.quarter &&
+          Math.random() < 0.16;
+        if (canRest) rested = true;
+        pos += emitRhythm(events, d, canRest);
+      }
+    }
+    return events;
+  }
+
   function buildRhythm(settings, ticks, beatTicks) {
-    let allowed = settings.rhythms.map(durById).filter(Boolean);
+    const allowed = settings.rhythms.map(durById).filter(Boolean);
+    const allowedIds = allowed.map((d) => d.id);
+    const has = (id) => allowedIds.indexOf(id) >= 0;
+    const density = settings.rhythmDensity || 3;
+    const catalog = [
+      ["w"],
+      ["hd"],
+      ["h"],
+      ["q"],
+      ["8"],
+      ["8", "8"],
+      ["q", "8", "8"],
+      ["8", "8", "q"],
+      ["8", "8", "8"],
+      ["qd", "8"],
+      ["qd", "8", "8", "8"],
+      ["8d", "16"],
+      ["16", "8d"],
+      ["16", "16"],
+      ["16", "16", "16", "16"],
+      ["8", "16", "16"],
+      ["16", "16", "8"],
+      ["16", "8", "16"],
+      ["16d", "32"],
+      ["32", "32", "32", "32", "32", "32", "32", "32"],
+      ["8t"],
+      ["16t"],
+      ["qt"],
+      ["qdd", "16"],
+    ];
+    const cells = catalog.filter((ids) => {
+      if (!ids.every(has)) return false;
+      const step = ids.reduce((sum, id) => sum + spanOf(durById(id)), 0);
+      return step > 0 && step <= ticks && ticks % step === 0;
+    });
+
+    if (cells.length) {
+      const ids = T.weightedPick(cells, (cell) => cellWeight(cell, density, ticks));
+      const events = tileCell(ids, ticks, !!settings.allowRests);
+      const used = events.reduce((sum, e) => sum + e.dur.ticks, 0);
+      if (used === ticks) {
+        const straight = { q: 1, h: 1, hd: 1, w: 1, "8": 1 };
+        events.syncOk = ids.every((id) => straight[id]);
+        return events;
+      }
+    }
+
     const restAllowed = settings.rests
       .map(durById)
       .filter((d) => d && !d.group);
@@ -43,13 +128,8 @@
     let left = ticks;
     let lastWasRest = false;
     const beat = beatTicks || T.TICKS.quarter;
-    const restChance =
-      settings.mallets >= 3 && settings.texture !== "melody" && settings.texture !== "mixed"
-        ? settings.allowRests ? 0.08 : 0
-        : settings.allowRests ? 0.18 : 0;
-    const density = settings.rhythmDensity;
+    const restChance = settings.allowRests ? 0.12 : 0;
     const q = T.TICKS.quarter;
-
     while (left > 0) {
       const pos = ticks - left;
       const toBeat = beat - (pos % beat);
@@ -63,7 +143,6 @@
         events.length > 0 &&
         pos !== 0 &&
         Math.random() < restChance;
-
       let pool = useRest ? restFits : noteFits.length ? noteFits : restFits;
       if (!pool.length) {
         const fallback = [durById("8"), durById("16"), durById("32")].filter((d) => d && d.ticks <= cap && d.ticks <= left);
@@ -73,7 +152,6 @@
         lastWasRest = true;
         continue;
       }
-
       const onBeat = pos % beat === 0;
       const choice = T.weightedPick(pool, (d) => {
         const shortBias = density / 5;
@@ -84,10 +162,10 @@
         if (!onBeat && span >= T.TICKS.half) s *= 0.2;
         return s;
       });
-
       left -= emitRhythm(events, choice, useRest);
       lastWasRest = useRest;
     }
+    events.syncOk = true;
     return events;
   }
 
@@ -935,7 +1013,7 @@
         motifLeft--;
       } else {
         rhythm = buildRhythm(settings, time.ticks, time.beatTicks);
-        rhythm = applySyncopation(rhythm, time.ticks, time.beatTicks, settings);
+        if (rhythm.syncOk) rhythm = applySyncopation(rhythm, time.ticks, time.beatTicks, settings);
         motif = rhythm.map((e) => ({ dur: e.dur, rest: e.rest, tuplet: e.tuplet || null, tie: !!e.tie }));
         motifLeft = 1;
       }
