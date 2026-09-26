@@ -171,33 +171,53 @@
     let out = "";
     let beam = "";
     let acc = 0;
-    let inTuplet = false;
     const flush = () => {
       if (beam) out += beam + " ";
       beam = "";
     };
-    events.forEach((ev) => {
+    let i = 0;
+    while (i < events.length) {
+      const ev = events[i];
+      if (ev.tuplet === "start" && ev.dur && ev.dur.group > 1) {
+        flush();
+        const group = [];
+        while (i < events.length) {
+          group.push(events[i]);
+          acc += events[i].dur.ticks;
+          const end = events[i].tuplet === "end";
+          i++;
+          if (end) break;
+        }
+        const closed = group.length === (ev.dur.group || 3) && group[group.length - 1].tuplet === "end";
+        if (!closed) {
+          group.forEach((g) => {
+            const plain = Object.assign({}, g, { tuplet: null, dur: Object.assign({}, g.dur, { group: 0, writtenTicks: g.dur.ticks }) });
+            out += markingPrefix(plain) + eventToken(plain, score, options) + " ";
+          });
+          continue;
+        }
+        let tok = "(3";
+        group.forEach((g) => {
+          tok += markingPrefix(g) + eventToken(g, score, options);
+        });
+        out += tok + " ";
+        continue;
+      }
       let tok = eventToken(ev, score, options);
       const prefix = markingPrefix(ev);
-      const grouped = ev.dur.group > 1;
       const beamable = !ev.rest && ev.dur.beamable && ev.pitches && ev.pitches.length;
       if (prefix) flush();
-      if (grouped && ev.tuplet === "start") {
-        tok = prefix + "(3" + tok;
-        inTuplet = true;
-      } else if (prefix) {
-        tok = prefix + tok;
-      }
-      if (!grouped && !beamable) {
+      if (prefix) tok = prefix + tok;
+      if (!beamable) {
         flush();
         out += tok + " ";
       } else {
         beam += tok;
       }
-      if (grouped && ev.tuplet === "end") inTuplet = false;
       acc += ev.dur.ticks;
-      if (!inTuplet && beat && acc % beat === 0) flush();
-    });
+      if (beat && acc % beat === 0) flush();
+      i++;
+    }
     flush();
     return out.trim();
   }
