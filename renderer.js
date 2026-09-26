@@ -206,7 +206,6 @@
       let tok = eventToken(ev, score, options);
       const prefix = markingPrefix(ev);
       const beamable = !ev.rest && ev.dur.beamable && ev.pitches && ev.pitches.length;
-      if (prefix) flush();
       if (prefix) tok = prefix + tok;
       if (!beamable) {
         flush();
