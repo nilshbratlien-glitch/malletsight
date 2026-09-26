@@ -229,6 +229,19 @@
         ? "Level " + (idx + 1) + ". " + LEVELS[idx].hint
         : "Custom mix. Choose 1–10 to set rhythms, rests, leaps, and markings.";
     }
+    const read = $("#levelRead");
+    if (read) read.textContent = idx >= 0 ? String(idx + 1) : "–";
+    const down = $("#btnLevelDown");
+    const up = $("#btnLevelUp");
+    if (down) down.disabled = idx === 0;
+    if (up) up.disabled = idx === LEVELS.length - 1;
+  }
+
+  function stepLevel(dir) {
+    const idx = levelIndex();
+    const n = idx < 0 ? 1 : idx + 1 + dir;
+    if (n < 1 || n > LEVELS.length) return;
+    applyLevel(n);
   }
 
   function applyLevel(n) {
@@ -747,7 +760,8 @@
       requestAnimationFrame(() => requestAnimationFrame(generate));
     }
     $("#btnGenerate").addEventListener("click", generateFresh);
-    $("#btnNew").addEventListener("click", generate);
+    $("#btnLevelDown").addEventListener("click", () => stepLevel(-1));
+    $("#btnLevelUp").addEventListener("click", () => stepLevel(1));
     $("#btnApply").addEventListener("click", generateFresh);
 
     let metroSubdiv = 1;
