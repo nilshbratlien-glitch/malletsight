@@ -644,6 +644,147 @@
     return n === 2 ? [1, 2] : n === 3 ? [1, 2, 3] : [1, 2, 3, 4];
   }
 
+  function motionPenalty(from, to) {
+    if (from == null) return 0;
+    const d = Math.abs(to - from);
+    if (d === 0) return 0;
+    if (d <= 2) return 1;
+    if (d === 5 || d === 7) return 2;
+    if (d === 12) return 3;
+    if (d <= 5) return 4;
+    return 8 + d;
+  }
+
+  /* Two grips: each hand a 3rd, 4th, or 5th, small gap, triad tones only. */
+  function splitHands(tones, pool, settings, prev, opts) {
+    opts = opts || {};
+    const pcOf = (p) => ((p % 12) + 12) % 12;
+    const grand = twoStaff(settings);
+    const avail = pool.filter(
+      (p) => p >= settings.rangeLow && p <= settings.rangeHigh && tones.indexOf(pcOf(p)) >= 0
+    );
+    if (avail.length < 2) return null;
+    const prevBass = prev && prev.length ? prev[0] : null;
+    const prevTop = prev && prev.length ? prev[prev.length - 1] : null;
+    const want = opts.nNotes || (settings.mallets >= 4 ? 4 : 3);
+    const rootPc = opts.rootPc;
+    const topNote = opts.topNote;
+    let best = null;
+    let bestScore = 1e9;
+
+    function consider(pitches) {
+      const uniq = [...new Set(pitches)].sort((a, b) => a - b);
+      if (uniq.length < 2 || uniq.length > 4) return;
+      if (topNote != null && uniq[uniq.length - 1] !== topNote) return;
+      if (want >= 4 && uniq.length < 3) return;
+      if (want <= 2 && uniq.length !== 2) return;
+      if (!gripShape(uniq, grand, settings)) return;
+      let score = 0;
+      if (rootPc != null && pcOf(uniq[0]) !== rootPc) score += 30;
+      score += motionPenalty(prevBass, uniq[0]) * 3;
+      score += motionPenalty(prevTop, uniq[uniq.length - 1]) * 2;
+      if (prev && prev.length) {
+        uniq.forEach((p) => {
+          let near = prev[0];
+          prev.forEach((q) => {
+            if (Math.abs(q - p) < Math.abs(near - p)) near = q;
+          });
+          score += motionPenalty(near, p);
+          if (prev.indexOf(p) >= 0) score -= 2;
+        });
+      }
+      if (want >= 4 && uniq.length === 4) score -= 3;
+      if (want >= 4 && uniq.length < 4) score += 5;
+      if (score < bestScore) {
+        bestScore = score;
+        best = uniq;
+      }
+    }
+
+    let bassList = avail.filter((p) => {
+      if (grand && p >= 59) return false;
+      if (rootPc != null && pcOf(p) !== rootPc) return false;
+      if (prevBass == null) return true;
+      const d = Math.abs(p - prevBass);
+      return d <= 7 || d === 12;
+    });
+    if (!bassList.length) {
+      bassList = avail.filter((p) => (!grand || p < 59) && (rootPc == null || pcOf(p) === rootPc));
+    }
+    if (!bassList.length) return null;
+
+    if (want <= 2) {
+      bassList.forEach((bass) => {
+        avail.forEach((p) => {
+          const d = p - bass;
+          if (d >= 3 && d <= 7) consider([bass, p]);
+        });
+      });
+    } else {
+      bassList.forEach((bass) => {
+        const lhTops = avail.filter((p) => p > bass && p - bass >= 3 && p - bass <= 7 && (!grand || p < 60));
+        const rh = avail.filter((p) => {
+          if (p <= bass) return false;
+          if (grand && p < 60) return false;
+          if (!grand && p - bass > 19) return false;
+          return p <= Math.min(settings.rangeHigh, grand ? 84 : 108);
+        });
+        lhTops.forEach((lh) => {
+          for (let i = 0; i < rh.length; i++) {
+            const gap = rh[i] - lh;
+            if (gap < 3 || gap > 12) continue;
+            for (let j = i + 1; j < rh.length; j++) {
+              const d = rh[j] - rh[i];
+              if (d < 3 || d > 7) continue;
+              consider([bass, lh, rh[i], rh[j]]);
+            }
+          }
+        });
+        for (let i = 0; i < rh.length; i++) {
+          for (let j = i + 1; j < rh.length; j++) {
+            const d = rh[j] - rh[i];
+            if (d < 3 || d > 7) continue;
+            const gap = rh[i] - bass;
+            if (gap < 3 || gap > 12) continue;
+            consider([bass, rh[i], rh[j]]);
+          }
+        }
+      });
+    }
+    if (!best) return null;
+    return { pitches: best, mallets: malletsFor(best.length), bass: best[0] };
+  }
+
+  function gripShape(pitches, grand, settings) {
+    const n = pitches.length;
+    if (n === 2) {
+      const d = pitches[1] - pitches[0];
+      if (d < 3 || d > 7) return false;
+      return playable(pitches, 2, settings) || grand;
+    }
+    if (n === 4) {
+      const lh = pitches[1] - pitches[0];
+      const rh = pitches[3] - pitches[2];
+      const gap = pitches[2] - pitches[1];
+      if (lh < 3 || lh > 7 || rh < 3 || rh > 7) return false;
+      if (gap < 3 || gap > 12) return false;
+      if (grand && (pitches[1] >= 60 || pitches[2] < 60)) return false;
+      if (!grand && pitches[3] - pitches[0] > 19) return false;
+      return playable(pitches, 4, settings);
+    }
+    if (n === 3) {
+      if (grand && (pitches[0] >= 60 || pitches[2] < 60)) return false;
+      const left = pitches[1] - pitches[0];
+      const right = pitches[2] - pitches[1];
+      const rhGrip = right >= 3 && right <= 7 && left >= 3 && left <= 12;
+      const lhGrip = left >= 3 && left <= 7 && right >= 3 && right <= 12;
+      if (!rhGrip && !lhGrip) return false;
+      if (!grand && pitches[2] - pitches[0] > 19) return false;
+      return playable(pitches, 3, settings);
+    }
+    return false;
+  }
+
   function buildOpen(available, bass, nNotes) {
     /* LH fifth (or 4th), RH the next closed tones. */
     const fifth = available.find((p) => p > bass && (p - bass === 7 || p - bass === 5));
@@ -694,47 +835,8 @@
     const spec = T.diatonicQualities(key).find((q) => q.deg === deg) || { q: "maj" };
     const root = pcs[deg];
     const tones = T.chordTonesFrom(root, spec.q);
-    const pcOf = (p) => ((p % 12) + 12) % 12;
-    const prevBass = prev && prev.length ? prev[0] : 48;
-    const prevTop = prev && prev.length ? prev[prev.length - 1] : 67;
-    const grand = twoStaff(settings);
-    const roots = pool.filter((p) => pcOf(p) === root && p >= settings.rangeLow && (!grand || p < 59));
-    if (!roots.length) return null;
-    const bass = roots.slice().sort((a, b) => {
-      const pen = (x) => (Math.abs(x - prevBass) > 12 ? Math.abs(x - prevBass) + 8 : Math.abs(x - prevBass));
-      return pen(a) - pen(b);
-    })[0];
-    if (!grand) {
-      const available = pool.filter((p) => tones.includes(pcOf(p)));
-      const closed = stackClosed(available, bass, nNotes) || stackClosed(available, bass, Math.min(3, nNotes));
-      if (!closed) return null;
-      return { pitches: closed, mallets: malletsFor(closed.length), bass: bass };
-    }
-    const fifth = pool.find((p) => p > bass && p < 60 && p - bass === 7 && tones.includes(pcOf(p)));
-    const third = pool.find((p) => p > bass && p < 60 && (p - bass === 3 || p - bass === 4) && tones.includes(pcOf(p)));
-    const rh = pool.filter((p) => p >= 60 && p <= Math.min(settings.rangeHigh, 84) && tones.includes(pcOf(p)));
-    let pair = null;
-    let best = 1e9;
-    for (let i = 0; i < rh.length; i++) {
-      for (let j = i + 1; j < rh.length; j++) {
-        const d = rh[j] - rh[i];
-        if (d < 3 || d > 8) continue;
-        const s = Math.abs(rh[j] - prevTop) + Math.abs(d - 4);
-        if (s < best) {
-          best = s;
-          pair = [rh[i], rh[j]];
-        }
-      }
-    }
-    let pitches;
-    if (nNotes >= 4 && fifth && pair) pitches = [bass, fifth, pair[0], pair[1]];
-    else if (nNotes >= 4 && third && pair) pitches = [bass, third, pair[0], pair[1]];
-    else if (pair) pitches = [bass, pair[0], pair[1]];
-    else if (rh.length) pitches = [bass, T.nearestIn(rh, Math.max(60, prevTop))];
-    else return null;
-    pitches = [...new Set(pitches)].sort((a, b) => a - b);
-    if (pitches.length < 2 || pitches[0] >= 60 || pitches[pitches.length - 1] < 60) return null;
-    return { pitches: pitches, mallets: malletsFor(pitches.length), bass: bass };
+    const prevPitches = Array.isArray(prev) ? prev : prev && prev.pitches ? prev.pitches : null;
+    return splitHands(tones, pool, settings, prevPitches, { nNotes: nNotes, rootPc: root });
   }
 
   function addBassUnder(melody, pool, key, settings, prevBass, cadence) {
@@ -755,25 +857,17 @@
     const pcs = T.scalePcs(key);
     const quals = T.diatonicQualities(key);
     const topPc = ((melody % 12) + 12) % 12;
-    const match = quals.filter((q) => T.chordTonesFrom(pcs[q.deg], q.q).includes(topPc));
-    const list = match.length ? match : quals;
+    const match = quals.filter((q) => q.q !== "dim" && T.chordTonesFrom(pcs[q.deg], q.q).includes(topPc));
+    const list = match.length ? match : quals.filter((q) => q.deg === 0);
     const deg = T.weightedPick(list, (q) => (q.deg === 0 ? 4 : q.deg === 4 ? 3 : 2));
     const tones = T.chordTonesFrom(pcs[deg.deg], deg.q);
-    const options = bassPool.filter((p) => tones.includes(((p % 12) + 12) % 12));
-    const use = options.length ? options : bassPool;
-    const target = prevBass != null ? prevBass : 48;
-    const bass = T.weightedPick(use, (p) => 6 / (1 + Math.abs(p - target)));
-    let extra = null;
-    if (settings.mallets >= 4 && Math.random() < 0.45) {
-      extra = use.find((p) => p > bass && p - bass <= 7 && p - bass >= 3);
-    }
-    const rh2 = settings.mallets >= 4 && Math.random() < 0.35
-      ? pool.find((p) => p > melody && p <= melody + 7 && p >= 60 && tones.includes(((p % 12) + 12) % 12))
-      : null;
-    const pitches = [bass, extra, melody, rh2].filter((p) => p != null);
-    const uniq = [...new Set(pitches)].sort((a, b) => a - b);
-    const mallets = uniq.length === 2 ? [1, 3] : uniq.length === 3 ? [1, 2, 3] : [1, 2, 3, 4];
-    return { pitches: uniq, mallets: mallets, bass: bass };
+    const prev = prevBass != null ? [prevBass, melody] : [melody];
+    const voiced = splitHands(tones, pool, settings, prev, {
+      nNotes: settings.mallets >= 4 ? 4 : 3,
+      topNote: melody >= 60 ? melody : null,
+    });
+    if (voiced) return voiced;
+    return { pitches: [melody], mallets: [3], bass: prevBass };
   }
 
   function createBlockWalker(settings, key, pool) {
@@ -785,10 +879,6 @@
     let pi = 0;
     let hold = 0;
     let last = null;
-    const startBass = T.nearestIn(
-      pool,
-      twoStaff(settings) ? Math.min(settings.rangeLow + 7, 50) : Math.round((settings.rangeLow * 2 + settings.rangeHigh) / 3) - 4
-    );
 
     return function next(nNotes, kind) {
       if (kind === "tonic" || kind === "approach") {
@@ -805,35 +895,24 @@
       hold--;
       const deg = prog[pi];
       const spec = quals.find((q) => q.deg === deg) || quals[0];
-      let quality = spec.q;
-      if (nNotes === 4 && quality !== "dim" && !twoStaff(settings) && Math.random() < 0.3) {
-        quality = quality === "maj" ? "maj7" : quality === "min" ? "min7" : quality;
-      }
-      const tones = T.chordTonesFrom(pcs[spec.deg], quality);
-      const available = pool.filter((p) => tones.includes(((p % 12) + 12) % 12));
-      const bassTarget = last ? last[0] : startBass;
-      const basses = available.filter((p) => Math.abs(p - bassTarget) <= Math.min(settings.maxGripShift || 7, 8));
-      const bassPool = basses.length ? basses : available;
-      const ordered = bassPool.slice().sort((a, b) => Math.abs(a - bassTarget) - Math.abs(b - bassTarget));
-
-      for (const bass of ordered) {
-        const wantOpen = settings.voicing === "open" || twoStaff(settings);
-        const chord = wantOpen
-          ? buildTwoStaffChord(available, bass, nNotes, settings) ||
-            buildOpen(available, bass, nNotes) ||
-            stackClosed(available, bass, nNotes)
-          : stackClosed(available, bass, nNotes);
-        if (!chord || chord.length < 2) continue;
-        if (!playable(chord, chord.length, settings)) continue;
-        if (last && Math.abs(chord[0] - last[0]) > Math.min(settings.maxGripShift || 7, 8)) continue;
-        if (last && Math.abs(chord[chord.length - 1] - last[last.length - 1]) > 5) continue;
-        last = chord;
-        return { pitches: chord, mallets: malletsFor(chord.length) };
+      const tones = T.chordTonesFrom(pcs[spec.deg], spec.q);
+      const voiced = splitHands(tones, pool, settings, last, { nNotes: nNotes });
+      if (voiced && voiced.pitches.length >= 2) {
+        last = voiced.pitches;
+        return voiced;
       }
       const fallback = voiceBlock(nNotes, pool, key, settings, last);
-      last = fallback.pitches;
+      if (fallback && fallback.pitches && fallback.pitches.length >= 2 && gripShape(fallback.pitches, twoStaff(settings), settings)) {
+        last = fallback.pitches;
+        return fallback;
+      }
+      if (last && last.length >= 2) return { pitches: last.slice(), mallets: malletsFor(last.length) };
       return fallback;
     };
+    next.remember = function (pitches) {
+      if (pitches && pitches.length) last = pitches.slice();
+    };
+    return next;
   }
 
   function voiceBlock(nNotes, pool, key, settings, prevChord) {
@@ -854,60 +933,17 @@
         return idx === -1 ? 1 : 6 - idx;
       });
       const root = pcs[deg.deg];
-      const quality =
-        nNotes === 4 && Math.random() < 0.35 && deg.q !== "dim"
-          ? deg.q === "maj"
-            ? "maj7"
-            : deg.q === "min"
-              ? "min7"
-              : deg.q
-          : deg.q;
+      const quality = deg.q;
       const tones = T.chordTonesFrom(root, quality);
-      const available = usePool.filter((p) => tones.includes(((p % 12) + 12) % 12));
-      if (available.length < nNotes) continue;
-
-      let bass;
-      if (prevChord && Math.random() < 0.75) {
-        const near = available.filter((p) => Math.abs(p - prevChord[0]) <= 5);
-        bass = near.length
-          ? T.weightedPick(near, (p) => 8 - Math.abs(p - prevChord[0]))
-          : T.nearestIn(available, prevChord[0]);
-      } else {
-        const target = windowCenter - 5;
-        bass = T.weightedPick(available, (p) => 1 / (1 + Math.abs(p - target)));
-      }
-
-      const chord = stackClosed(available, bass, nNotes);
-      if (!playable(chord, nNotes, settings)) continue;
-      if (prevChord && Math.abs(chord[0] - prevChord[0]) > Math.min(settings.maxGripShift || 7, 7)) continue;
-      if (prevChord && Math.abs(chord[chord.length - 1] - prevChord[prevChord.length - 1]) > 7) continue;
-
-      const mallets = nNotes === 2 ? [1, 2] : nNotes === 3 ? [1, 2, 3] : [1, 2, 3, 4];
-      return { pitches: chord, mallets };
+      const voiced = splitHands(tones, pool, settings, prevChord, { nNotes: nNotes });
+      if (voiced) return voiced;
     }
 
-    if (prevChord && prevChord.length === nNotes) {
-      const shift = T.pick([-2, -1, 1, 2]);
-      const moved = [...new Set(prevChord.map((p) => T.nearestIn(usePool, p + shift)))].sort((a, b) => a - b);
-      if (playable(moved, moved.length, settings)) {
-        return {
-          pitches: moved,
-          mallets: moved.length === 2 ? [1, 2] : moved.length === 3 ? [1, 2, 3] : [1, 2, 3, 4],
-        };
-      }
-    }
-
+    const tonicTones = T.chordTonesFrom(pcs[0], quals[0].q);
+    const fallback = splitHands(tonicTones, pool, settings, prevChord, { nNotes: nNotes, rootPc: pcs[0] });
+    if (fallback) return fallback;
     const bass = T.nearestIn(usePool, windowCenter - 4);
-    const pitches = [bass];
-    let p = bass;
-    while (pitches.length < nNotes) {
-      const nxt = usePool.find((x) => x >= p + 3) || usePool[usePool.length - 1];
-      if (nxt <= p) break;
-      pitches.push(nxt);
-      p = nxt;
-    }
-    const mallets = pitches.length === 2 ? [1, 2] : pitches.length === 3 ? [1, 2, 3] : [1, 2, 3, 4];
-    return { pitches, mallets };
+    return { pitches: [bass], mallets: [1] };
   }
 
   function pickNoteCount(settings, cell) {
@@ -994,36 +1030,16 @@
   function harmonizeMelody(top, nNotes, pool, key, settings) {
     const pcs = T.scalePcs(key);
     const quals = T.diatonicQualities(key);
-    const candidates = quals.filter((q) => T.chordTonesFrom(pcs[q.deg], q.q).includes(((top % 12) + 12) % 12));
-    const list = candidates.length ? candidates : quals;
-    for (let attempt = 0; attempt < 20; attempt++) {
+    const topPc = ((top % 12) + 12) % 12;
+    const candidates = quals.filter((q) => q.q !== "dim" && T.chordTonesFrom(pcs[q.deg], q.q).includes(topPc));
+    const list = candidates.length ? candidates : quals.filter((q) => q.deg === 0);
+    for (let attempt = 0; attempt < 8; attempt++) {
       const deg = T.weightedPick(list, (q) => (q.deg === 0 ? 4 : q.deg === 4 ? 3 : 2));
       const tones = T.chordTonesFrom(pcs[deg.deg], deg.q);
-      const below = pool.filter((p) => p < top && p >= top - 16 && tones.includes(((p % 12) + 12) % 12));
-      if (below.length < nNotes - 1) continue;
-      const chord = [top];
-      let cursor = top;
-      while (chord.length < nNotes) {
-        const opts = below.filter((p) => p < cursor && cursor - p <= 7);
-        if (!opts.length) break;
-        const nxt = opts.sort((a, b) => {
-          const sa = cursor - a;
-          const sb = cursor - b;
-          const score = (d) => (d === 3 || d === 4 ? 0 : d === 5 ? 1 : 2);
-          return score(sa) - score(sb) || sb - sa;
-        })[0];
-        chord.push(nxt);
-        cursor = nxt;
-      }
-      chord.sort((a, b) => a - b);
-      if (chord.length === nNotes && playable(chord, nNotes, settings)) {
-        return {
-          pitches: chord,
-          mallets: nNotes === 2 ? [1, 2] : nNotes === 3 ? [1, 2, 3] : [1, 2, 3, 4],
-        };
-      }
+      const voiced = splitHands(tones, pool, settings, [top], { nNotes: nNotes, topNote: top });
+      if (voiced) return voiced;
     }
-    return voiceBlock(nNotes, pool, key, settings, [top]);
+    return { pitches: [top], mallets: [settings.mallets >= 4 ? 3 : 1] };
   }
 
   function resolveKey(settings) {
@@ -1256,7 +1272,10 @@
 
       const events = [];
       let barPos = 0;
+      let harmonyChanges = 0;
+      let heldVoicing = prevChord && prevChord.length > 1 ? { pitches: prevChord.slice(), mallets: malletsFor(prevChord.length) } : null;
       for (const cell of rhythm) {
+        const noteAt = barPos;
         const onBeat = time.beatTicks ? barPos % time.beatTicks === 0 : true;
         barPos += cell.dur.ticks;
         if (cell.rest) {
@@ -1292,17 +1311,14 @@
               const trial = pitches.slice();
               trial[trial.length - 1] = melodyPitch;
               const uniq = [...new Set(trial)].sort((a, b) => a - b);
-              let clash = false;
-              for (let i = 1; i < uniq.length; i++) {
-                const m = (uniq[i] - uniq[i - 1]) % 12;
-                if (m === 1 || m === 2 || m === 6 || m === 10 || m === 11) clash = true;
-              }
-              if (!clash) pitches = uniq;
+              if (gripShape(uniq, twoStaff(settings), settings)) pitches = uniq;
             }
             mallets = malletsFor(pitches.length);
             prevPitch = pitches[pitches.length - 1];
             prevChord = pitches;
             if (voiced.bass != null) prevBass = voiced.bass;
+            if (blockNext && blockNext.remember) blockNext.remember(pitches);
+            heldVoicing = { pitches: pitches.slice(), mallets: mallets.slice() };
           }
         }
 
@@ -1346,16 +1362,31 @@
           prevPitch = melodyPitch;
           prevChord = pitches;
         } else if (!pitches && blockNext) {
-          const voiced = blockNext(n, cell.cadence || null);
-          pitches = colorTop(voiced.pitches, settings, key, cell);
-          mallets = voiced.mallets;
-          prevPitch = pitches[Math.floor(pitches.length / 2)];
+          const dur = cell.dur.ticks;
+          const beat = time.beatTicks || T.TICKS.quarter;
+          const canChange =
+            harmonyChanges === 0 ||
+            (dur >= T.TICKS.quarter &&
+              harmonyChanges < 2 &&
+              noteAt % beat === 0 &&
+              noteAt >= time.ticks / 2);
+          if (!canChange && heldVoicing) {
+            pitches = heldVoicing.pitches.slice();
+            mallets = heldVoicing.mallets.slice();
+          } else {
+            const voiced = blockNext(n, cell.cadence || null);
+            pitches = voiced.pitches;
+            mallets = voiced.mallets;
+            heldVoicing = { pitches: pitches.slice(), mallets: mallets.slice() };
+            harmonyChanges++;
+          }
+          prevPitch = pitches[pitches.length - 1];
           prevChord = pitches;
         } else if (!pitches) {
           const voiced = voiceBlock(n, pool, key, settings, prevChord);
-          pitches = colorTop(voiced.pitches, settings, key, cell);
+          pitches = voiced.pitches;
           mallets = voiced.mallets;
-          prevPitch = pitches[Math.floor(pitches.length / 2)];
+          prevPitch = pitches[pitches.length - 1];
           prevChord = pitches;
         }
 
