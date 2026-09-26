@@ -1,6 +1,12 @@
 # Mallet Sight Reader
 
-v1.3 is on the `test` branch. v1.2 is what Netlify serves from `main`.
+v1.3 is what Netlify serves from `main`. The `test` branch matches it.
+
+## v1.3
+
+- Four-mallet chords sit in two grips and hold through short notes.
+- The level is on the main screen. Again replays the same etude, slower.
+- A line above the music names the level, key, meter, and instrument.
 
 ## v1.2
 
