@@ -95,82 +95,99 @@
     return T.DURATIONS.find((d) => !d.group && d.ticks === ticks) || null;
   }
 
-  function syncUnit(beat) {
-    if (beat === 36) return 12;
-    if (beat <= 12 && beat % 12 === 0) return 12;
-    if (durByTicks(beat / 2)) return beat / 2;
-    if (beat % 12 === 0) return 12;
-    return durByTicks(6) ? 6 : 0;
+  function syncWindow(beat) {
+    if (beat >= 36) return beat;
+    if (beat <= 12) return 36;
+    return beat * 2;
   }
 
-  /* Notes that attack off the beat and are held across the next one. */
-  function syncopationCells(beat, allowRests) {
-    const list = [];
-    const unit = syncUnit(beat);
-    const span = beat * 2;
-    if (unit && span % unit === 0 && durByTicks(unit)) {
-      const dur = durByTicks(unit);
-      const n = span / unit;
-      const tied = [];
-      let pos = 0;
-      let crossed = false;
-      for (let i = 0; i < n; i++) {
-        const tie = pos + unit === beat;
-        if (tie) crossed = true;
-        tied.push({ dur: dur, rest: false, tie: tie });
-        pos += unit;
-      }
-      if (crossed) {
-        list.push(tied);
-        list.push(tied);
-      }
+  /* One offbeat note that holds across the next pulse. The rest of the bar stays. */
+  function syncFigures(win, allowRests) {
+    const eighth = durByTicks(12);
+    const quarter = durByTicks(24);
+    const dotted = durByTicks(36);
+    const figs = [];
+    if (win === 48 && eighth && dotted) {
+      figs.push({ w: 6, notes: [{ dur: eighth, rest: false }, { dur: dotted, rest: false }] });
+      if (allowRests) figs.push({ w: 2, notes: [{ dur: eighth, rest: true }, { dur: dotted, rest: false }] });
     }
-    const lead = beat / 2;
-    if (durByTicks(lead) && durByTicks(beat)) {
-      list.push([
-        { dur: durByTicks(lead), rest: false, tie: false },
-        { dur: durByTicks(beat), rest: false, tie: false },
-        { dur: durByTicks(lead), rest: false, tie: false },
-      ]);
-      if (allowRests) {
-        list.push([
-          { dur: durByTicks(lead), rest: true, tie: false },
-          { dur: durByTicks(beat), rest: false, tie: false },
-          { dur: durByTicks(lead), rest: false, tie: false },
-        ]);
-      }
+    if (win === 48 && eighth && quarter) {
+      figs.push({
+        w: 2,
+        notes: [
+          { dur: eighth, rest: false },
+          { dur: quarter, rest: false },
+          { dur: eighth, rest: false },
+        ],
+      });
     }
-    return list;
+    if (win === 36 && eighth && quarter) {
+      figs.push({ w: 5, notes: [{ dur: eighth, rest: false }, { dur: quarter, rest: false }] });
+      if (allowRests) figs.push({ w: 2, notes: [{ dur: eighth, rest: true }, { dur: quarter, rest: false }] });
+    }
+    return figs;
   }
 
-  function fillStraight(out, ticks) {
-    let left = ticks;
-    const order = T.DURATIONS.filter((d) => !d.group && !d.dots).sort((a, b) => b.ticks - a.ticks);
-    while (left > 0) {
-      const dur = order.find((d) => d.ticks <= left);
-      if (!dur) return false;
-      out.push({ dur: dur, rest: false, tie: false });
-      left -= dur.ticks;
+  function copyRhythm(ev, ticks) {
+    const dur = ticks == null ? ev.dur : durByTicks(ticks);
+    if (!dur) return null;
+    return {
+      dur: dur,
+      rest: !!ev.rest,
+      tuplet: ticks == null ? ev.tuplet || null : null,
+    };
+  }
+
+  function cutAround(events, start, end) {
+    let t = 0;
+    const before = [];
+    const after = [];
+    for (let i = 0; i < events.length; i++) {
+      const ev = events[i];
+      const a = t;
+      const b = t + ev.dur.ticks;
+      t = b;
+      if (b <= start) {
+        before.push(copyRhythm(ev));
+        continue;
+      }
+      if (a >= end) {
+        after.push(copyRhythm(ev));
+        continue;
+      }
+      if (ev.tuplet) return null;
+      if (a < start) {
+        const left = copyRhythm(ev, start - a);
+        if (!left) return null;
+        before.push(left);
+      }
+      if (b > end) {
+        const right = copyRhythm(ev, b - end);
+        if (!right) return null;
+        after.push(right);
+      }
     }
-    return true;
+    return { before: before, after: after };
   }
 
   function applySyncopation(events, ticks, beat, settings) {
     if (!settings.syncopation || !events.length || !beat) return events;
-    const cells = syncopationCells(beat, !!settings.allowRests);
-    if (!cells.length) return events;
-    const span = beat * 2;
-    const out = [];
-    let pos = 0;
-    while (pos + span <= ticks) {
-      const pat = T.pick(cells);
-      pat.forEach((e) => out.push({ dur: e.dur, rest: e.rest, tie: !!e.tie }));
-      pos += span;
+    const win = syncWindow(beat);
+    const figs = syncFigures(win, !!settings.allowRests);
+    if (!win || !figs.length || ticks < win) return events;
+    const starts = [];
+    for (let pos = 0; pos + win <= ticks; pos += beat) starts.push(pos);
+    const order = starts.slice().sort(() => Math.random() - 0.5);
+    for (let i = 0; i < order.length; i++) {
+      const cut = cutAround(events, order[i], order[i] + win);
+      if (!cut) continue;
+      const fig = T.weightedPick(figs, (f) => f.w);
+      const mid = fig.notes.map((n) => ({ dur: n.dur, rest: n.rest, tuplet: null }));
+      const out = cut.before.concat(mid, cut.after);
+      const used = out.reduce((s, e) => s + e.dur.ticks, 0);
+      if (used === ticks) return out;
     }
-    if (pos < ticks && !fillStraight(out, ticks - pos)) return events;
-    const used = out.reduce((n, e) => n + e.dur.ticks, 0);
-    if (used !== ticks) return events;
-    return out;
+    return events;
   }
 
   function colorTop(pitches, settings, key, cell) {
