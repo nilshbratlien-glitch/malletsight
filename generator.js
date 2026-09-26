@@ -663,22 +663,93 @@
     const lhTop = available.find((p) => p > bass && p < 60 && (p - bass === 7 || p - bass === 5 || p - bass === 4 || p - bass === 3));
     const rhPool = available.filter((p) => p >= 60 && p <= settings.rangeHigh);
     if (!rhPool.length) return null;
+    let best = null;
+    let score = 1e9;
+    for (let i = 0; i < rhPool.length; i++) {
+      for (let j = i + 1; j < rhPool.length; j++) {
+        const d = rhPool[j] - rhPool[i];
+        if (d < 3 || d > 8) continue;
+        const s = Math.abs(rhPool[i] - 64) + Math.abs(rhPool[j] - 70);
+        if (s < score) {
+          score = s;
+          best = [rhPool[i], rhPool[j]];
+        }
+      }
+    }
     if (nNotes === 2) {
-      return [bass, T.nearestIn(rhPool, 67)];
+      const rh = rhPool.filter((p) => p - bass >= 5 && p - bass <= 19);
+      const use = rh.length ? rh : rhPool;
+      return [bass, T.nearestIn(use, 67)];
     }
-    if (nNotes === 3) {
-      const top = T.nearestIn(rhPool, 72);
-      const mid = lhTop || T.nearestIn(rhPool.filter((p) => p < top), 64);
-      return [bass, mid, top].sort((a, b) => a - b);
-    }
-    const a = T.nearestIn(rhPool, 64);
-    const b = T.nearestIn(rhPool.filter((p) => p !== a), 72);
+    if (!best) return null;
+    if (nNotes === 3) return [bass, best[0], best[1]];
     const left2 = lhTop || bass;
-    const chord = [...new Set([bass, left2, a, b])].sort((x, y) => x - y);
-    return chord.length === nNotes ? chord : null;
+    const chord = [...new Set([bass, left2, best[0], best[1]])].sort((a, b) => a - b);
+    return chord.length === nNotes ? chord : [bass, best[0], best[1]];
   }
 
-  function addBassUnder(melody, pool, key, settings, prevBass) {
+  function cadenceVoicing(kind, nNotes, pool, key, settings, prev) {
+    const pcs = T.scalePcs(key);
+    const deg = kind === "approach" ? 4 : 0;
+    const spec = T.diatonicQualities(key).find((q) => q.deg === deg) || { q: "maj" };
+    const root = pcs[deg];
+    const tones = T.chordTonesFrom(root, spec.q);
+    const pcOf = (p) => ((p % 12) + 12) % 12;
+    const prevBass = prev && prev.length ? prev[0] : 48;
+    const prevTop = prev && prev.length ? prev[prev.length - 1] : 67;
+    const grand = twoStaff(settings);
+    const roots = pool.filter((p) => pcOf(p) === root && p >= settings.rangeLow && (!grand || p < 59));
+    if (!roots.length) return null;
+    const bass = roots.slice().sort((a, b) => {
+      const pen = (x) => (Math.abs(x - prevBass) > 12 ? Math.abs(x - prevBass) + 8 : Math.abs(x - prevBass));
+      return pen(a) - pen(b);
+    })[0];
+    if (!grand) {
+      const available = pool.filter((p) => tones.includes(pcOf(p)));
+      const closed = stackClosed(available, bass, nNotes) || stackClosed(available, bass, Math.min(3, nNotes));
+      if (!closed) return null;
+      return { pitches: closed, mallets: malletsFor(closed.length), bass: bass };
+    }
+    const fifth = pool.find((p) => p > bass && p < 60 && p - bass === 7 && tones.includes(pcOf(p)));
+    const third = pool.find((p) => p > bass && p < 60 && (p - bass === 3 || p - bass === 4) && tones.includes(pcOf(p)));
+    const rh = pool.filter((p) => p >= 60 && p <= Math.min(settings.rangeHigh, 84) && tones.includes(pcOf(p)));
+    let pair = null;
+    let best = 1e9;
+    for (let i = 0; i < rh.length; i++) {
+      for (let j = i + 1; j < rh.length; j++) {
+        const d = rh[j] - rh[i];
+        if (d < 3 || d > 8) continue;
+        const s = Math.abs(rh[j] - prevTop) + Math.abs(d - 4);
+        if (s < best) {
+          best = s;
+          pair = [rh[i], rh[j]];
+        }
+      }
+    }
+    let pitches;
+    if (nNotes >= 4 && fifth && pair) pitches = [bass, fifth, pair[0], pair[1]];
+    else if (nNotes >= 4 && third && pair) pitches = [bass, third, pair[0], pair[1]];
+    else if (pair) pitches = [bass, pair[0], pair[1]];
+    else if (rh.length) pitches = [bass, T.nearestIn(rh, Math.max(60, prevTop))];
+    else return null;
+    pitches = [...new Set(pitches)].sort((a, b) => a - b);
+    if (pitches.length < 2 || pitches[0] >= 60 || pitches[pitches.length - 1] < 60) return null;
+    return { pitches: pitches, mallets: malletsFor(pitches.length), bass: bass };
+  }
+
+  function addBassUnder(melody, pool, key, settings, prevBass, cadence) {
+    if (cadence === "tonic" || cadence === "approach") {
+      const voiced = cadenceVoicing(cadence, settings.mallets >= 4 ? 4 : 3, pool, key, settings, [prevBass || 48, melody]);
+      if (voiced) {
+        if (voiced.pitches.indexOf(melody) < 0 && melody >= 60) {
+          const next = voiced.pitches.slice();
+          next[next.length - 1] = melody;
+          const uniq = [...new Set(next)].sort((a, b) => a - b);
+          return { pitches: uniq, mallets: malletsFor(uniq.length), bass: voiced.bass };
+        }
+        return voiced;
+      }
+    }
     const bassPool = pool.filter((p) => p < 60 && p >= settings.rangeLow);
     if (!bassPool.length) return { pitches: [melody], mallets: [3] };
     const pcs = T.scalePcs(key);
@@ -719,7 +790,14 @@
       twoStaff(settings) ? Math.min(settings.rangeLow + 7, 50) : Math.round((settings.rangeLow * 2 + settings.rangeHigh) / 3) - 4
     );
 
-    return function next(nNotes) {
+    return function next(nNotes, kind) {
+      if (kind === "tonic" || kind === "approach") {
+        const voiced = cadenceVoicing(kind, nNotes, pool, key, settings, last);
+        if (voiced && voiced.pitches.length >= 2) {
+          last = voiced.pitches;
+          return voiced;
+        }
+      }
       if (hold <= 0) {
         pi = (pi + 1) % prog.length;
         hold = settings.texture === "chorale" ? 1 : T.pick([1, 1, 2]);
@@ -728,7 +806,7 @@
       const deg = prog[pi];
       const spec = quals.find((q) => q.deg === deg) || quals[0];
       let quality = spec.q;
-      if (nNotes === 4 && quality !== "dim" && Math.random() < 0.3) {
+      if (nNotes === 4 && quality !== "dim" && !twoStaff(settings) && Math.random() < 0.3) {
         quality = quality === "maj" ? "maj7" : quality === "min" ? "min7" : quality;
       }
       const tones = T.chordTonesFrom(pcs[spec.deg], quality);
@@ -745,11 +823,12 @@
             buildOpen(available, bass, nNotes) ||
             stackClosed(available, bass, nNotes)
           : stackClosed(available, bass, nNotes);
-        if (!playable(chord, nNotes, settings)) continue;
+        if (!chord || chord.length < 2) continue;
+        if (!playable(chord, chord.length, settings)) continue;
         if (last && Math.abs(chord[0] - last[0]) > Math.min(settings.maxGripShift || 7, 8)) continue;
         if (last && Math.abs(chord[chord.length - 1] - last[last.length - 1]) > 5) continue;
         last = chord;
-        return { pitches: chord, mallets: malletsFor(nNotes) };
+        return { pitches: chord, mallets: malletsFor(chord.length) };
       }
       const fallback = voiceBlock(nNotes, pool, key, settings, last);
       last = fallback.pitches;
@@ -1209,8 +1288,8 @@
             !!cell.tuplet ||
             cell.dur.ticks >= T.TICKS.quarter ||
             (cell.dur.ticks >= T.TICKS.eighth && Math.random() < 0.55);
-          if (addBass) {
-            const voiced = addBassUnder(melodyPitch, pool, key, settings, prevBass);
+          if (addBass || cell.cadence) {
+            const voiced = addBassUnder(melodyPitch, pool, key, settings, prevBass, cell.cadence || null);
             pitches = voiced.pitches;
             mallets = voiced.mallets;
             prevBass = voiced.bass;
@@ -1238,7 +1317,7 @@
           prevPitch = melodyPitch;
           prevChord = pitches;
         } else if (blockNext) {
-          const voiced = blockNext(n);
+          const voiced = blockNext(n, cell.cadence || null);
           pitches = colorTop(voiced.pitches, settings, key, cell);
           mallets = voiced.mallets;
           prevPitch = pitches[Math.floor(pitches.length / 2)];
