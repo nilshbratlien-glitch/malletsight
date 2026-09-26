@@ -1047,52 +1047,85 @@
     return out;
   }
 
-  /* Every fourth bar lets the phrase land, then rests for one beat. */
-  function phraseBreath(events, ticks, beat, asRest, endTonic) {
-    if (!events.length || !ticks) return null;
-    const b = beat || T.TICKS.quarter;
-    let span = b >= T.TICKS.quarter ? b : Math.min(ticks, T.TICKS.quarter);
-    let cut = ticks - span;
-    if (b && cut % b !== 0) {
-      cut -= cut % b;
-      span = ticks - cut;
+  /* Phrase ending: half note on beat 3, or a quarter on beat 4. */
+  function breathLanding(ticks, beat) {
+    const q = T.TICKS.quarter;
+    const h = T.TICKS.half;
+    const b = beat || q;
+    const beats = Math.round(ticks / b);
+    const options = [];
+    const half = durByTicks(h);
+    const quarter = durByTicks(q);
+    if (beats >= 4 && half && (beats - 2) * b + h === ticks) {
+      options.push({ cut: (beats - 2) * b, dur: half });
     }
-    if (cut <= 0 || span <= 0 || span >= ticks) return null;
-    const sliced = cutAround(events, cut, ticks);
-    let head = sliced && sliced.before;
-    let freed = span;
+    if (beats >= 4 && quarter && b === q && (beats - 1) * b + q === ticks) {
+      options.push({ cut: (beats - 1) * b, dur: quarter });
+    }
+    if (beats === 3 && b === q && half && quarter) {
+      options.push({ cut: b, dur: half });
+      options.push({ cut: b * 2, dur: quarter });
+    }
+    if (!options.length && quarter && ticks > q && (ticks - q) % b === 0) {
+      options.push({ cut: ticks - q, dur: quarter });
+    }
+    if (!options.length && b < ticks) {
+      const dur = durByTicks(b);
+      if (dur) options.push({ cut: ticks - b, dur: dur });
+    }
+    return options.length ? T.pick(options) : null;
+  }
+
+  function phraseBreath(events, ticks, beat, endTonic) {
+    if (!events.length || !ticks) return null;
+    const landing = breathLanding(ticks, beat);
+    if (!landing || !landing.dur) return null;
+    const start = landing.cut;
+    let head = null;
+    const sliced = cutAround(events, start, ticks);
+    if (sliced) head = sliced.before;
     if (!head) {
       head = events.slice();
-      freed = 0;
-      const popOne = () => {
-        if (!head.length) return false;
+      let used = head.reduce((sum, event) => sum + event.dur.ticks, 0);
+      while (head.length && used > start) {
         let last = head.pop();
-        freed += last.dur.ticks;
+        used -= last.dur.ticks;
         while (last.tuplet && last.tuplet !== "start" && head.length) {
           last = head.pop();
-          freed += last.dur.ticks;
+          used -= last.dur.ticks;
         }
-        return true;
-      };
-      while (head.length && (freed < span || (b && (ticks - freed) % b !== 0))) {
-        if (!popOne()) break;
       }
-      if (freed <= 0 || freed >= ticks) return null;
     }
-    const dur = durByTicks(freed);
-    if (!dur) return null;
-    const tail = { dur: dur, rest: !!asRest, tuplet: null, cadence: !asRest && endTonic ? "tonic" : null };
-    const out = head.concat([tail]);
-    if (asRest && endTonic) {
+    if (!head) return null;
+    let used = head.reduce((sum, event) => sum + event.dur.ticks, 0);
+    if (used > start) return null;
+    const out = head.slice();
+    let gap = start - used;
+    const fillers = [T.TICKS.quarter, T.TICKS.eighth, T.TICKS.sixteenth, T.TICKS.thirtysecond]
+      .map((t) => durByTicks(t))
+      .filter(Boolean);
+    while (gap > 0) {
+      const d = fillers.find((item) => item.ticks <= gap);
+      if (!d) return null;
+      out.push({ dur: d, rest: false, tuplet: null });
+      gap -= d.ticks;
+    }
+    out.push({
+      dur: landing.dur,
+      rest: false,
+      tuplet: null,
+      cadence: endTonic ? "tonic" : null,
+    });
+    if (endTonic) {
       for (let i = out.length - 2; i >= 0; i--) {
         if (!out[i].rest) {
-          out[i].cadence = "tonic";
+          out[i].cadence = "approach";
           break;
         }
       }
     }
-    const used = out.reduce((s, e) => s + e.dur.ticks, 0);
-    if (used !== ticks) return null;
+    const total = out.reduce((sum, event) => sum + event.dur.ticks, 0);
+    if (total !== ticks) return null;
     return out;
   }
 
@@ -1125,7 +1158,14 @@
 
       const lastBar = m === settings.measures - 1;
       const phraseEnd = (m + 1) % 4 === 0;
-      if (lastBar) {
+      if (phraseEnd) {
+        const breathed = phraseBreath(rhythm, time.ticks, time.beatTicks, settings.endTonic !== false);
+        if (breathed) rhythm = breathed;
+        else if (lastBar) {
+          const settled = settleEnding(rhythm, time.ticks, time.beatTicks, settings.endTonic !== false);
+          if (settled) rhythm = settled;
+        }
+      } else if (lastBar) {
         const settled = settleEnding(rhythm, time.ticks, time.beatTicks, settings.endTonic !== false);
         if (settled) rhythm = settled;
         else if (settings.endTonic !== false) {
@@ -1133,15 +1173,6 @@
           if (sounding.length) sounding[sounding.length - 1].ev.cadence = "tonic";
           if (sounding.length > 1) sounding[sounding.length - 2].ev.cadence = "approach";
         }
-      } else if (phraseEnd) {
-        const breathed = phraseBreath(
-          rhythm,
-          time.ticks,
-          time.beatTicks,
-          !!settings.allowRests,
-          settings.endTonic !== false
-        );
-        if (breathed) rhythm = breathed;
       }
 
       const events = [];
