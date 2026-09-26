@@ -247,16 +247,18 @@
     const hi = pool[pool.length - 1];
     let prev = null;
     let prevWasChromatic = false;
-    let dir = Math.random() < 0.55 ? 1 : -1;
-    let sinceTurn = 0;
-    const turnEvery = 5 + ((Math.random() * 4) | 0);
+    let dir = Math.random() < 0.5 ? 1 : -1;
+    let stepsLeft = 3 + ((Math.random() * 2) | 0);
+    let leapDebt = false;
+    let phraseLeft = 6 + ((Math.random() * 3) | 0);
+    let repeated = false;
 
     function pcOf(p) {
       return ((p % 12) + 12) % 12;
     }
     function degOf(p) {
       const i = pcs.indexOf(pcOf(p));
-      return i < 0 ? 0 : i;
+      return i < 0 ? -1 : i;
     }
     function nearestTonic(from) {
       const tonics = pool.filter((p) => pcOf(p) === tonic);
@@ -269,9 +271,30 @@
       });
       return approaches.length ? T.nearestIn(approaches, from) : from;
     }
-
     function inScale(p) {
       return pcs.indexOf(pcOf(p)) >= 0;
+    }
+    function indexOfPitch(p) {
+      const exact = pool.indexOf(p);
+      if (exact >= 0) return exact;
+      let best = 0;
+      let dist = 99;
+      pool.forEach((n, i) => {
+        const d = Math.abs(n - p);
+        if (d < dist) {
+          dist = d;
+          best = i;
+        }
+      });
+      return best;
+    }
+    function scaleSteps(from, steps) {
+      if (!steps) return from;
+      const j = indexOfPitch(from) + steps;
+      if (j < 0 || j >= pool.length) return null;
+      const p = pool[j];
+      if (Math.abs(p - from) > maxSemi) return null;
+      return p;
     }
     function chromaticBeside(pitch, from) {
       const opts = [];
@@ -282,11 +305,28 @@
         opts.push(p);
       });
       if (!opts.length) return pitch;
-      if (from != null) {
-        const steps = opts.filter((p) => Math.abs(p - from) <= 2);
-        if (steps.length) return T.pick(steps);
+      const steps = from == null ? opts : opts.filter((p) => Math.abs(p - from) <= 2);
+      return (steps.length ? steps : opts)[0];
+    }
+    function turn() {
+      dir *= -1;
+      stepsLeft = 3 + ((Math.random() * 2) | 0);
+    }
+    function finish(pitch, from) {
+      const leap = from != null && Math.abs(pitch - from) >= 5;
+      leapDebt = leap;
+      if (leap) dir = Math.sign(pitch - from) || dir;
+      prev = pitch;
+      repeated = from != null && pitch === from;
+      if (!leapDebt && !repeated && settings.accidentals && phraseLeft > 2 && Math.random() < 0.16) {
+        const chrom = chromaticBeside(pitch, from);
+        if (chrom !== pitch) {
+          prev = chrom;
+          prevWasChromatic = true;
+          leapDebt = false;
+        }
       }
-      return T.pick(opts);
+      return prev;
     }
 
     return function next(kind) {
@@ -300,53 +340,62 @@
       if (kind === "tonic") {
         prev = nearestTonic(prev);
         prevWasChromatic = false;
+        leapDebt = false;
         return prev;
       }
       if (kind === "approach") {
         prev = nearestApproach(prev);
         prevWasChromatic = false;
+        leapDebt = false;
         return prev;
       }
       const from = prev;
-      sinceTurn++;
-      if (sinceTurn >= turnEvery || prev <= lo + 3 || prev >= hi - 3) {
-        dir *= -1;
-        sinceTurn = 0;
-      }
-      const use = pool.filter((p) => {
-        const d = Math.abs(p - prev);
-        if (d > maxSemi) return false;
-        if (!settings.allowUnison && p === prev) return false;
-        return true;
-      });
-      const list = use.length ? use : pool.filter((p) => Math.abs(p - prev) <= maxSemi + 3);
-      prev = T.weightedPick(list.length ? list : pool, (p) => {
-        const dist = Math.abs(p - prev);
-        const going = Math.sign(p - prev) === dir || p === prev;
-        let w = dist <= 2 ? 14 : dist <= 4 ? 5 : dist === 0 ? 0.7 : dist <= 7 ? 1.8 : 0.25;
-        if (going) w *= 2.4;
-        const deg = degOf(p);
-        if (deg === 0 || deg === 4 || deg === 2) w *= 1.35;
-        if (deg === 6) w *= 0.55;
-        return w;
-      });
       if (prevWasChromatic) {
         prevWasChromatic = false;
-        const near = pool.filter((p) => {
-          const d = Math.abs(p - from);
-          return d > 0 && d <= 2;
-        });
-        if (near.length) prev = T.nearestIn(near, from);
+        const back = scaleSteps(from, -dir) || scaleSteps(from, dir) || nearestTonic(from);
+        prev = back;
+        leapDebt = false;
         return prev;
       }
-      if (settings.accidentals && Math.random() < 0.26) {
-        const chrom = chromaticBeside(prev, from);
-        if (chrom !== prev) {
-          prev = chrom;
-          prevWasChromatic = true;
+      if (leapDebt) {
+        const back = scaleSteps(from, -dir) || scaleSteps(from, dir);
+        leapDebt = false;
+        if (back && back !== from) return finish(back, from);
+      }
+      phraseLeft--;
+      if (phraseLeft <= 1) {
+        const goal = nearestTonic(from);
+        if (pcOf(from) === tonic || phraseLeft < 0) {
+          phraseLeft = 6 + ((Math.random() * 3) | 0);
+          dir = Math.random() < 0.5 ? 1 : -1;
+          stepsLeft = 3;
+        } else {
+          const toward = Math.sign(goal - from) || -dir;
+          const step = scaleSteps(from, toward) || goal;
+          dir = toward;
+          return finish(step, from);
         }
       }
-      return prev;
+      stepsLeft--;
+      if (stepsLeft <= 0 || from <= lo + 2 || from >= hi - 2) turn();
+      let pitch = null;
+      const roll = Math.random();
+      if (!repeated && roll < 0.08) pitch = from;
+      else if (roll < 0.8) pitch = scaleSteps(from, dir);
+      else if (roll < 0.93) pitch = scaleSteps(from, dir * 2);
+      else if (kind === "beat" && maxSemi >= 5) {
+        const leap = maxSemi >= 12 ? 7 : maxSemi >= 9 ? 5 : maxSemi >= 7 ? 4 : 3;
+        pitch = scaleSteps(from, dir * leap);
+      }
+      if (pitch == null) {
+        turn();
+        pitch = scaleSteps(from, dir) || scaleSteps(from, -dir) || from;
+      }
+      if (kind === "beat") {
+        const step = scaleSteps(from, dir);
+        if (step != null && [0, 2, 4].indexOf(degOf(step)) >= 0) pitch = step;
+      }
+      return finish(pitch, from);
     };
   }
 
@@ -507,6 +556,7 @@
           : stackClosed(available, bass, nNotes);
         if (!playable(chord, nNotes, settings)) continue;
         if (last && Math.abs(chord[0] - last[0]) > Math.min(settings.maxGripShift || 7, 8)) continue;
+        if (last && Math.abs(chord[chord.length - 1] - last[last.length - 1]) > 5) continue;
         last = chord;
         return { pitches: chord, mallets: malletsFor(nNotes) };
       }
@@ -634,7 +684,8 @@
     return sorted[j];
   }
 
-  function addDoubleStop(melody, pool, settings) {
+  function addDoubleStop(melody, pool, settings, mem) {
+    mem = mem || {};
     const names = settings.stopIntervals && settings.stopIntervals.length
       ? settings.stopIntervals
       : ["3", "4", "5", "6", "8"];
@@ -643,7 +694,17 @@
       settings.stopPlace === "above" ? [1] :
       settings.stopPlace === "below" ? [-1] :
       Math.random() < 0.75 ? [-1, 1] : [1, -1];
-    const order = names.slice().sort(() => Math.random() - 0.5);
+    const preferred = ["3", "3", "4", "5", "6", "8"].filter((n) => names.indexOf(n) >= 0);
+    const order = [];
+    if (mem.stop && names.indexOf(mem.stop) >= 0 && Math.random() < 0.7) {
+      order.push(mem.stop);
+    }
+    preferred.forEach((n) => {
+      if (order.indexOf(n) < 0) order.push(n);
+    });
+    names.forEach((n) => {
+      if (order.indexOf(n) < 0) order.push(n);
+    });
     for (const dir of dirs) {
       for (const name of order) {
         const other = diatonicNeighbor(melody, pool, dir * (stepOf[name] || 2));
@@ -652,6 +713,7 @@
         const span = Math.abs(other - melody);
         if (span < 3 || span > 12) continue;
         const pitches = [melody, other].sort((a, b) => a - b);
+        mem.stop = name;
         return { pitches, mallets: [1, 2] };
       }
     }
@@ -755,14 +817,25 @@
     let prevPitch = null;
     let prevChord = null;
     let prevBass = null;
+    let motif = null;
+    let motifLeft = 0;
+    const lineMem = { stop: null };
     const blockNext =
       settings.texture === "block" || settings.texture === "chorale"
         ? createBlockWalker(settings, key, pool)
         : null;
 
     for (let m = 0; m < settings.measures; m++) {
-      let rhythm = buildRhythm(settings, time.ticks, time.beatTicks);
-      rhythm = applySyncopation(rhythm, time.ticks, time.beatTicks, settings);
+      let rhythm;
+      if (motif && motifLeft > 0 && m !== settings.measures - 1) {
+        rhythm = motif.map((e) => ({ dur: e.dur, rest: e.rest, tuplet: e.tuplet || null, tie: !!e.tie }));
+        motifLeft--;
+      } else {
+        rhythm = buildRhythm(settings, time.ticks, time.beatTicks);
+        rhythm = applySyncopation(rhythm, time.ticks, time.beatTicks, settings);
+        motif = rhythm.map((e) => ({ dur: e.dur, rest: e.rest, tuplet: e.tuplet || null, tie: !!e.tie }));
+        motifLeft = 1;
+      }
 
       const lastBar = m === settings.measures - 1;
       if (lastBar) {
@@ -772,7 +845,10 @@
       }
 
       const events = [];
+      let barPos = 0;
       for (const cell of rhythm) {
+        const onBeat = time.beatTicks ? barPos % time.beatTicks === 0 : true;
+        barPos += cell.dur.ticks;
         if (cell.rest) {
           events.push({
             rest: true,
@@ -789,7 +865,7 @@
         if (cell.dur.ticks < T.TICKS.quarter && n > 1 && !(twoStaff(settings) && cell.tuplet)) n = 1;
         let pitches;
         let mallets;
-        const melodyPitch = melodyNext(cell.cadence || null);
+        const melodyPitch = melodyNext(cell.cadence || (onBeat ? "beat" : null));
 
         if (settings.texture === "melody") {
           pitches = [melodyPitch];
@@ -819,7 +895,7 @@
           prevPitch = melodyPitch;
           prevChord = pitches;
         } else if (settings.mallets === 2 && (settings.texture === "mixed" || settings.texture === "doublestops")) {
-          const voiced = addDoubleStop(melodyPitch, pool, settings);
+          const voiced = addDoubleStop(melodyPitch, pool, settings, lineMem);
           pitches = voiced.pitches;
           mallets = voiced.mallets;
           prevPitch = melodyPitch;
