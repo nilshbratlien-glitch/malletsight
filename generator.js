@@ -1276,13 +1276,42 @@
         let pitches;
         let mallets;
         const melodyPitch = melodyNext(cell.cadence || (onBeat ? "beat" : null));
+        const cadenceKind = cell.cadence === "tonic" || cell.cadence === "approach" ? cell.cadence : null;
 
-        if (settings.texture === "melody") {
+        if (cadenceKind && settings.texture !== "melody") {
+          const want = settings.mallets <= 2 ? 2 : Math.min(4, settings.mallets);
+          const voiced = cadenceVoicing(cadenceKind, want, pool, key, settings, prevChord);
+          if (voiced && voiced.pitches.length >= 2) {
+            pitches = voiced.pitches;
+            const pcs = T.scalePcs(key);
+            const deg = cadenceKind === "approach" ? 4 : 0;
+            const spec = T.diatonicQualities(key).find((q) => q.deg === deg) || { q: "maj" };
+            const tones = T.chordTonesFrom(pcs[deg], spec.q);
+            const melPc = ((melodyPitch % 12) + 12) % 12;
+            if (tones.indexOf(melPc) >= 0 && pitches.indexOf(melodyPitch) < 0) {
+              const trial = pitches.slice();
+              trial[trial.length - 1] = melodyPitch;
+              const uniq = [...new Set(trial)].sort((a, b) => a - b);
+              let clash = false;
+              for (let i = 1; i < uniq.length; i++) {
+                const m = (uniq[i] - uniq[i - 1]) % 12;
+                if (m === 1 || m === 2 || m === 6 || m === 10 || m === 11) clash = true;
+              }
+              if (!clash) pitches = uniq;
+            }
+            mallets = malletsFor(pitches.length);
+            prevPitch = pitches[pitches.length - 1];
+            prevChord = pitches;
+            if (voiced.bass != null) prevBass = voiced.bass;
+          }
+        }
+
+        if (!pitches && settings.texture === "melody") {
           pitches = [melodyPitch];
           mallets = settings.mallets === 4 ? [T.pick([2, 3])] : [settings.mallets === 3 ? 2 : 1];
           prevPitch = melodyPitch;
           prevChord = pitches;
-        } else if (twoStaff(settings) && settings.texture === "mixed") {
+        } else if (!pitches && twoStaff(settings) && settings.texture === "mixed") {
           const addBass =
             n > 1 ||
             !!cell.tuplet ||
@@ -1299,30 +1328,30 @@
           }
           prevPitch = melodyPitch;
           prevChord = pitches;
-        } else if (n === 1) {
+        } else if (!pitches && n === 1) {
           pitches = [melodyPitch];
           mallets = settings.mallets === 4 ? [T.pick([2, 3])] : [settings.mallets === 3 ? 2 : 1];
           prevPitch = melodyPitch;
           prevChord = pitches;
-        } else if (settings.mallets === 2 && (settings.texture === "mixed" || settings.texture === "doublestops")) {
+        } else if (!pitches && settings.mallets === 2 && (settings.texture === "mixed" || settings.texture === "doublestops")) {
           const voiced = addDoubleStop(melodyPitch, pool, settings, lineMem);
           pitches = voiced.pitches;
           mallets = voiced.mallets;
           prevPitch = melodyPitch;
           prevChord = pitches;
-        } else if (settings.texture === "mixed") {
+        } else if (!pitches && settings.texture === "mixed") {
           const voiced = harmonizeMelody(melodyPitch, n, pool, key, settings);
           pitches = voiced.pitches;
           mallets = voiced.mallets;
           prevPitch = melodyPitch;
           prevChord = pitches;
-        } else if (blockNext) {
+        } else if (!pitches && blockNext) {
           const voiced = blockNext(n, cell.cadence || null);
           pitches = colorTop(voiced.pitches, settings, key, cell);
           mallets = voiced.mallets;
           prevPitch = pitches[Math.floor(pitches.length / 2)];
           prevChord = pitches;
-        } else {
+        } else if (!pitches) {
           const voiced = voiceBlock(n, pool, key, settings, prevChord);
           pitches = colorTop(voiced.pitches, settings, key, cell);
           mallets = voiced.mallets;
