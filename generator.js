@@ -425,29 +425,24 @@
     return diat;
   }
 
-  function nextMelodyPitch(prev, pool, settings, key) {
-    if (!pool.length) return settings.rangeLow;
-    const maxSemi = T.intervalSemis(settings.maxLeap);
-    if (prev == null) {
-      if (settings.startTonic) {
-        const tonics = pool.filter((p) => p % 12 === key.tonic);
-        return tonics.length ? T.pick(tonics) : T.nearestIn(pool, (settings.rangeLow + settings.rangeHigh) / 2);
-      }
-      const mid = pool.filter((p) => Math.abs(p - (settings.rangeLow + settings.rangeHigh) / 2) < 8);
-      return T.pick(mid.length ? mid : pool);
+  function leapRate(semi) {
+    if (semi <= 2) return 0;
+    if (semi <= 4) return 0.18;
+    if (semi <= 5) return 0.24;
+    if (semi <= 7) return 0.3;
+    if (semi <= 9) return 0.34;
+    return 0.4;
+  }
+
+  function leapSteps(semi) {
+    const approx = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19];
+    const options = [];
+    for (let n = 2; n < approx.length; n++) {
+      if (approx[n] <= semi) options.push(n);
     }
-    const candidates = pool.filter((p) => Math.abs(p - prev) <= maxSemi && p !== prev);
-    const withUnison = settings.allowUnison ? pool.filter((p) => Math.abs(p - prev) <= maxSemi) : candidates;
-    const use = withUnison.length ? withUnison : pool.filter((p) => Math.abs(p - prev) <= maxSemi + 2);
-    if (!use.length) return T.nearestIn(pool, prev);
-    return T.weightedPick(use, (p) => {
-      const dist = Math.abs(p - prev);
-      if (dist === 1 || dist === 2) return 8;
-      if (dist === 3 || dist === 4) return 4;
-      if (dist === 0) return 1.2;
-      if (dist <= 7) return 2;
-      return 0.6;
-    });
+    if (!options.length) return 1;
+    const top = options[options.length - 1];
+    return T.weightedPick(options, (n) => (n === top ? 4 : n >= top - 1 ? 2 : 1));
   }
 
   function createMelodyWalker(settings, key, pool) {
@@ -587,7 +582,8 @@
         dir = Math.sign(goal - from) || dir;
         const far = Math.abs(goal - from);
         let steps = 1;
-        if (far > 4 && Math.random() < 0.22) steps = 2;
+        if (kind === "beat" && Math.random() < leapRate(maxSemi)) steps = leapSteps(maxSemi);
+        else if (far > 4 && maxSemi >= 4 && Math.random() < 0.18) steps = 2;
         const pitch = scaleSteps(from, dir * steps) || scaleSteps(from, dir) || from;
         return finish(pitch, from);
       }
@@ -610,17 +606,14 @@
       let pitch = null;
       const roll = Math.random();
       if (!repeated && roll < 0.08) pitch = from;
-      else if (roll < 0.8) pitch = scaleSteps(from, dir);
-      else if (roll < 0.93) pitch = scaleSteps(from, dir * 2);
-      else if (kind === "beat" && maxSemi >= 5) {
-        const leap = maxSemi >= 12 ? 7 : maxSemi >= 9 ? 5 : maxSemi >= 7 ? 4 : 3;
-        pitch = scaleSteps(from, dir * leap);
-      }
+      else if (roll < 0.72) pitch = scaleSteps(from, dir);
+      else if (roll < 0.84 && maxSemi >= 4) pitch = scaleSteps(from, dir * 2);
+      else if (kind === "beat" && maxSemi >= 4) pitch = scaleSteps(from, dir * leapSteps(maxSemi));
       if (pitch == null) {
         turn();
         pitch = scaleSteps(from, dir) || scaleSteps(from, -dir) || from;
       }
-      if (kind === "beat") {
+      if (kind === "beat" && (pitch == null || Math.abs(pitch - from) <= 2)) {
         const step = scaleSteps(from, dir);
         if (step != null && [0, 2, 4].indexOf(degOf(step)) >= 0) pitch = step;
       }
