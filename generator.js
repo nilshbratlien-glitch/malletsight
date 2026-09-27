@@ -98,15 +98,32 @@
 
   function pickCell(list, density) {
     return T.weightedPick(list, (cell) => {
-      const shortest = Math.min.apply(
-        null,
-        cell.ids.map((id) => durById(id).ticks)
-      );
-      let w = shortest <= 8 ? 1.35 : shortest <= 12 ? 1.15 : 1;
-      if (cell.ids.length > 1) w *= 1.25;
+      const spans = cell.ids.map((id) => durById(id).ticks);
+      const shortest = Math.min.apply(null, spans);
+      const longest = Math.max.apply(null, spans);
+      let w = 1;
+      if (density <= 1) w = longest >= 24 ? 3.2 : longest >= 12 ? 1.1 : 0.35;
+      else if (density === 2) w = longest >= 24 ? 1.8 : shortest <= 6 ? 0.6 : 1;
+      else if (density >= 4) w = shortest <= 12 ? 1.8 : 0.7;
       if (cell.feature !== "plain" && density < 3) w *= 0.45;
       return w;
     });
+  }
+
+  function pauseShare(density) {
+    if (density <= 1) return 0.42;
+    if (density === 2) return 0.26;
+    if (density === 3) return 0.14;
+    if (density === 4) return 0.07;
+    return 0.02;
+  }
+
+  function pauseChance(density) {
+    if (density <= 1) return 0.72;
+    if (density === 2) return 0.45;
+    if (density === 3) return 0.24;
+    if (density === 4) return 0.1;
+    return 0.04;
   }
 
   function buildVaried(has, ticks, beat, density, allowRests, avoidKeys) {
@@ -190,7 +207,7 @@
       const span = parts.reduce((sum, cell) => sum + cell.span, 0);
       if (span !== ticks) return null;
       const events = [];
-      const restState = { pos: 0, used: false };
+      const restState = { pos: 0, restTicks: 0, lastRest: false, bar: ticks };
       parts.forEach((cell) => emitIds(events, cell.ids, allowRests, restState));
       const used = events.reduce((sum, event) => sum + event.dur.ticks, 0);
       if (used !== ticks) return null;
@@ -204,15 +221,18 @@
     function emitIds(events, ids, allow, restState) {
       ids.forEach((id) => {
         const d = durById(id);
+        const share = restState.restTicks / restState.bar;
         const canRest =
           allow &&
           restState.pos > 0 &&
-          !restState.used &&
+          !restState.lastRest &&
           !d.group &&
-          d.ticks >= T.TICKS.quarter &&
-          Math.random() < 0.12;
-        if (canRest) restState.used = true;
-        restState.pos += emitRhythm(events, d, canRest);
+          share < pauseShare(density) &&
+          Math.random() < pauseChance(density);
+        const written = emitRhythm(events, d, canRest);
+        restState.pos += written;
+        if (canRest) restState.restTicks += written;
+        restState.lastRest = canRest;
       });
     }
 
@@ -241,7 +261,7 @@
     let left = ticks;
     let lastWasRest = false;
     const beat = beatTicks || T.TICKS.quarter;
-    const restChance = settings.allowRests ? 0.12 : 0;
+    const restChance = settings.allowRests ? pauseChance(density) : 0;
     const q = T.TICKS.quarter;
     while (left > 0) {
       const pos = ticks - left;
@@ -443,6 +463,7 @@
     let leapDebt = false;
     let phraseLeft = 6 + ((Math.random() * 3) | 0);
     let repeated = false;
+    let goal = null;
 
     function pcOf(p) {
       return ((p % 12) + 12) % 12;
@@ -552,6 +573,23 @@
         const back = scaleSteps(from, -dir) || scaleSteps(from, dir);
         leapDebt = false;
         if (back && back !== from) return finish(back, from);
+      }
+      if (settings.texture === "melody" && hi - lo >= 7) {
+        if (goal == null || Math.abs(from - goal) <= 2 || phraseLeft <= 0) {
+          const hop = Math.max(5, Math.min(Math.round((hi - lo) * 0.4), 8 + maxSemi * 2));
+          const mid = (lo + hi) / 2;
+          let way = from < mid - 1 ? 1 : from > mid + 1 ? -1 : dir;
+          if (Math.random() < 0.2) way *= -1;
+          goal = T.nearestIn(pool, Math.max(lo, Math.min(hi, from + way * hop)));
+          phraseLeft = 7 + ((Math.random() * 5) | 0);
+        }
+        phraseLeft--;
+        dir = Math.sign(goal - from) || dir;
+        const far = Math.abs(goal - from);
+        let steps = 1;
+        if (far > 4 && Math.random() < 0.22) steps = 2;
+        const pitch = scaleSteps(from, dir * steps) || scaleSteps(from, dir) || from;
+        return finish(pitch, from);
       }
       phraseLeft--;
       if (phraseLeft <= 1) {
