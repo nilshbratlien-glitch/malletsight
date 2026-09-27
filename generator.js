@@ -287,12 +287,39 @@
     return last;
   }
 
+  function breakEvenRuns(events, allowed) {
+    if (!events || events.length < 4) return events;
+    const ids = {};
+    allowed.forEach((d) => {
+      ids[d.id] = d;
+    });
+    let splices = 0;
+    let run = 0;
+    for (let i = 0; i < events.length && splices < 2; i++) {
+      const ev = events[i];
+      if (!ev.rest && ev.dur && ev.dur.id === "8" && !ev.tuplet) run++;
+      else run = 0;
+      if (run < 4) continue;
+      if (ids["16"]) {
+        events.splice(i, 1, { dur: ids["16"], rest: false, tuplet: null }, { dur: ids["16"], rest: false, tuplet: null });
+        splices++;
+        run = 0;
+      } else if (ids.q && i >= 1 && events[i - 1].dur && events[i - 1].dur.id === "8" && !events[i - 1].tuplet && !events[i - 1].rest) {
+        events.splice(i - 1, 2, { dur: ids.q, rest: false, tuplet: null });
+        splices++;
+        run = 0;
+        i--;
+      }
+    }
+    return events;
+  }
+
   function buildRhythm(settings, ticks, beatTicks, avoidKeys) {
     const allowed = settings.rhythms.map(durById).filter(Boolean);
     const has = (id) => allowed.some((d) => d.id === id);
     const density = settings.rhythmDensity || 3;
     const varied = buildVaried(has, ticks, beatTicks || T.TICKS.quarter, density, !!settings.allowRests, avoidKeys);
-    if (varied) return varied;
+    if (varied) return breakEvenRuns(varied, allowed);
 
     const restAllowed = settings.rests
       .map(durById)
@@ -500,6 +527,8 @@
     let repeated = false;
     let goal = null;
     let gestures = 0;
+    let runDir = 0;
+    let runLen = 0;
 
     function pcOf(p) {
       return ((p % 12) + 12) % 12;
@@ -561,6 +590,20 @@
       stepsLeft = 3 + ((Math.random() * 2) | 0);
     }
     function finish(pitch, from) {
+      if (from != null && runLen >= 2 && Math.sign(pitch - from) === runDir && Math.abs(pitch - from) <= 4) {
+        const back = scaleSteps(from, -runDir * 2) || scaleSteps(from, -runDir);
+        if (back != null && back !== from) pitch = back;
+      }
+      const moved = from == null ? 0 : Math.sign(pitch - from);
+      const step = from != null && Math.abs(pitch - from) <= 4;
+      if (moved && step && moved === runDir) runLen++;
+      else if (moved && step) {
+        runDir = moved;
+        runLen = 1;
+      } else {
+        runDir = moved;
+        runLen = 0;
+      }
       const leap = from != null && Math.abs(pitch - from) >= 5;
       leapDebt = leap;
       if (leap) dir = Math.sign(pitch - from) || dir;
