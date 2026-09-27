@@ -597,6 +597,7 @@
 
   function twoStaff(settings) {
     if (settings.clef === "treble" || settings.clef === "bass") return false;
+    if (settings.texture === "melody") return false;
     const marimba = String(settings.instrumentId || "").indexOf("mar") === 0 && settings.mallets >= 3;
     if (!marimba) return false;
     if (settings.clef === "grand") return true;
@@ -1488,11 +1489,14 @@
       lowShare >= 0.25 &&
       highShare >= 0.25 &&
       (settings.texture === "block" || settings.texture === "chorale");
+    const hasChords = soundingEvents.some((e) => e.pitches.length > 1);
     const instLock = T.INSTRUMENTS.find((i) => i.id === settings.instrumentId);
     if ((instLock && instLock.defaultClef === "treble") || writeOff !== 0) {
       clef = "treble";
     } else if (clef === "treble" || clef === "bass" || clef === "grand") {
       /* the staff the user picked */
+    } else if (!hasChords) {
+      clef = "auto";
     } else if (reallyGrand || twoStaff(settings)) {
       clef = "grand";
     } else {
