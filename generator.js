@@ -126,6 +126,25 @@
     return 0.04;
   }
 
+  function isRunCell(cell) {
+    if (!cell || !cell.ids || cell.ids.length < 2) return false;
+    return cell.ids.every((id) => {
+      const d = durById(id);
+      return d && d.ticks <= 12;
+    });
+  }
+
+  function keyIsRun(key) {
+    if (!key) return false;
+    const parts = key.split(".").filter(Boolean);
+    if (parts.length < 4) return false;
+    const shorts = parts.filter((part) => {
+      const id = part.replace(/^z/, "");
+      return id === "8" || id === "16" || id === "32" || id === "8t" || id === "16t";
+    }).length;
+    return shorts / parts.length >= 0.75;
+  }
+
   function buildVaried(has, ticks, beat, density, allowRests, avoidKeys) {
     if (!beat || ticks % beat !== 0) return null;
     const beats = ticks / beat;
@@ -152,9 +171,16 @@
         return pickCell(pool.length ? pool : beatsOk, density);
       }
       function oneHalf() {
-        if (halvesOk.length && (!beatsOk.length || Math.random() < 0.6)) return [pickCell(halvesOk, density)];
+        const calmHalves = halvesOk.filter((cell) => !isRunCell(cell));
+        if (calmHalves.length && Math.random() < 0.5) return [pickCell(calmHalves, density)];
+        if (halvesOk.length && !beatsOk.length) return [pickCell(halvesOk, density)];
         const a = takeBeat();
-        return [a, a];
+        let b = takeBeat(a.key);
+        if (isRunCell(a) && isRunCell(b)) {
+          const calm = beatsOk.filter((cell) => !isRunCell(cell));
+          if (calm.length) b = pickCell(calm, density);
+        }
+        return [a, b];
       }
 
       let parts = [];
@@ -196,6 +222,17 @@
         }
       }
       if (!parts.length) return null;
+      if (beats === 4 && parts.length >= 2) {
+        const runs = parts.filter(isRunCell).length;
+        if (runs >= parts.length - 1) {
+          const calm = beatsOk.filter((cell) => !isRunCell(cell));
+          if (calm.length) {
+            const swap = pickCell(calm, density);
+            const idx = parts.findIndex((cell) => cell.span === swap.span && isRunCell(cell));
+            if (idx >= 0) parts[idx] = swap;
+          }
+        }
+      }
       if (feature !== "plain" && !parts.some((cell) => cell.feature === feature)) {
         const feat = beatsOk.concat(halvesOk, barsOk).filter((cell) => cell.feature === feature);
         const swap = feat.length ? pickCell(feat, density) : null;
@@ -238,11 +275,14 @@
 
     let last = null;
     const blocked = avoidKeys || [];
+    const lastWasRun = keyIsRun(blocked.length ? blocked[blocked.length - 1] : "");
     for (let attempt = 0; attempt < 8; attempt++) {
       const built = once();
       if (!built) continue;
       last = built;
-      if (blocked.indexOf(built.cellKey) < 0) return built;
+      if (blocked.indexOf(built.cellKey) >= 0) continue;
+      if (lastWasRun && keyIsRun(built.cellKey) && attempt < 6) continue;
+      return built;
     }
     return last;
   }
@@ -459,6 +499,7 @@
     let phraseLeft = 6 + ((Math.random() * 3) | 0);
     let repeated = false;
     let goal = null;
+    let gestures = 0;
 
     function pcOf(p) {
       return ((p % 12) + 12) % 12;
@@ -570,20 +611,26 @@
         if (back && back !== from) return finish(back, from);
       }
       if (settings.texture === "melody" && hi - lo >= 7) {
-        if (goal == null || Math.abs(from - goal) <= 2 || phraseLeft <= 0) {
-          const hop = Math.max(5, Math.min(Math.round((hi - lo) * 0.4), 8 + maxSemi * 2));
+        if (goal == null || phraseLeft <= 0) {
+          gestures++;
+          phraseLeft = 2 + ((Math.random() * 3) | 0);
+          const drift = gestures % 4 === 0;
+          if (!drift && Math.random() < 0.55) dir *= -1;
           const mid = (lo + hi) / 2;
-          let way = from < mid - 1 ? 1 : from > mid + 1 ? -1 : dir;
-          if (Math.random() < 0.2) way *= -1;
+          const way = drift ? (from < mid ? 1 : -1) : dir;
+          const hop = drift
+            ? Math.max(4, Math.min(Math.round((hi - lo) * 0.28), 6 + maxSemi))
+            : 2 + ((Math.random() * 3) | 0);
           goal = T.nearestIn(pool, Math.max(lo, Math.min(hi, from + way * hop)));
-          phraseLeft = 7 + ((Math.random() * 5) | 0);
+          dir = Math.sign(goal - from) || dir;
         }
         phraseLeft--;
-        dir = Math.sign(goal - from) || dir;
-        const far = Math.abs(goal - from);
+        const roll = Math.random();
         let steps = 1;
-        if (kind === "beat" && Math.random() < leapRate(maxSemi)) steps = leapSteps(maxSemi);
-        else if (far > 4 && maxSemi >= 4 && Math.random() < 0.18) steps = 2;
+        if (roll < 0.1) return finish(from, from);
+        if (kind === "beat" && roll < leapRate(maxSemi)) steps = leapSteps(maxSemi);
+        else if (roll < 0.62 && maxSemi >= 4) steps = 2;
+        else if (roll > 0.9) dir *= -1;
         const pitch = scaleSteps(from, dir * steps) || scaleSteps(from, dir) || from;
         return finish(pitch, from);
       }
