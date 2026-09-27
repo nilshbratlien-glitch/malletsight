@@ -596,12 +596,11 @@
   }
 
   function twoStaff(settings) {
-    return (
-      String(settings.instrumentId || "").indexOf("mar") === 0 &&
-      settings.mallets >= 3 &&
-      settings.rangeLow < 55 &&
-      settings.rangeHigh >= 64
-    );
+    if (settings.clef === "treble" || settings.clef === "bass") return false;
+    const marimba = String(settings.instrumentId || "").indexOf("mar") === 0 && settings.mallets >= 3;
+    if (!marimba) return false;
+    if (settings.clef === "grand") return true;
+    return settings.rangeLow < 55 && settings.rangeHigh >= 64;
   }
 
   function playable(chord, nNotes, settings) {
@@ -1490,22 +1489,14 @@
       highShare >= 0.25 &&
       (settings.texture === "block" || settings.texture === "chorale");
     const instLock = T.INSTRUMENTS.find((i) => i.id === settings.instrumentId);
-    if (instLock && instLock.defaultClef === "treble") {
+    if ((instLock && instLock.defaultClef === "treble") || writeOff !== 0) {
       clef = "treble";
-    } else if (writeOff !== 0) {
-      clef = "treble";
-    } else if (twoStaff(settings)) {
+    } else if (clef === "treble" || clef === "bass" || clef === "grand") {
+      /* the staff the user picked */
+    } else if (reallyGrand || twoStaff(settings)) {
       clef = "grand";
-    } else if (settings.clef === "auto") {
-      if (reallyGrand) clef = "grand";
-      else clef = "auto"; /* renderer switches treble/bass by measure */
-    } else if (clef === "grand") {
-      const mid = written.length
-        ? written.reduce((a, b) => a + b, 0) / written.length
-        : 60;
-      if (reallyGrand) clef = "grand";
-      else if (mid < 62 || hi <= 65) clef = "bass";
-      else clef = "treble";
+    } else {
+      clef = "auto";
     }
 
     return {

@@ -273,6 +273,8 @@
     ];
     if (clef === "grand") {
       lines.push("%%staves {1 2}");
+      lines.push("V:1 clef=treble");
+      lines.push("V:2 clef=bass");
       lines.push("K:" + keyId);
       const upper = [];
       const lower = [];
@@ -292,10 +294,8 @@
         upper.push(measureAbc(u, score, options, score.time));
         lower.push(measureAbc(l, score, options, score.time));
       });
-      lines.push("V:1 clef=treble");
-      lines.push(upper.join(" | ") + " |]");
-      lines.push("V:2 clef=bass");
-      lines.push(lower.join(" | ") + " |]");
+      lines.push("[V:1] " + upper.join(" | ") + " |]");
+      lines.push("[V:2] " + lower.join(" | ") + " |]");
     } else if (clef === "auto") {
       let prev = null;
       const parts = [];
