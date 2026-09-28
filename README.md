@@ -7,6 +7,8 @@ v1.3 is what Netlify serves from `main`. The `test` branch matches it.
 - Four-mallet chords sit in two grips and hold through short notes.
 - The level is on the main screen. Again replays the same etude, slower.
 - A line above the music names the level, key, meter, and instrument.
+- The staff you pick is the staff that is written. A line with no chords changes clef by the bar.
+- Density 1 leaves more of the bar silent. A single line moves through the range, and the leap setting is the leap that gets written.
 
 ## v1.2
 
