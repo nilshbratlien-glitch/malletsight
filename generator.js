@@ -494,22 +494,28 @@
 
   function leapRate(semi) {
     if (semi <= 2) return 0;
-    if (semi <= 4) return 0.18;
-    if (semi <= 5) return 0.24;
-    if (semi <= 7) return 0.3;
-    if (semi <= 9) return 0.34;
-    return 0.4;
+    if (semi <= 4) return 0.22;
+    if (semi <= 5) return 0.28;
+    if (semi <= 7) return 0.55;
+    if (semi <= 9) return 0.7;
+    if (semi <= 11) return 0.8;
+    return 0.85;
   }
 
   function leapSteps(semi) {
     const approx = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19];
     const options = [];
     for (let n = 2; n < approx.length; n++) {
-      if (approx[n] <= semi) options.push(n);
+      if (approx[n] <= semi && approx[n] >= Math.min(semi, 5)) options.push(n);
+    }
+    if (!options.length) {
+      for (let n = 2; n < approx.length; n++) if (approx[n] <= semi) options.push(n);
     }
     if (!options.length) return 1;
     const top = options[options.length - 1];
-    return T.weightedPick(options, (n) => (n === top ? 4 : n >= top - 1 ? 2 : 1));
+    const floor = Math.max(options[0], top - 2);
+    const big = options.filter((n) => n >= floor);
+    return T.weightedPick(big.length ? big : options, (n) => (n === top ? 4 : 2));
   }
 
   function createMelodyWalker(settings, key, pool) {
@@ -669,12 +675,18 @@
         }
         phraseLeft--;
         const roll = Math.random();
+        if (roll < 0.08) return finish(from, from);
         let steps = 1;
-        if (roll < 0.1) return finish(from, from);
-        if (kind === "beat" && roll < leapRate(maxSemi)) steps = leapSteps(maxSemi);
-        else if (roll < 0.62 && maxSemi >= 4) steps = 2;
-        else if (roll > 0.9) dir *= -1;
-        const pitch = scaleSteps(from, dir * steps) || scaleSteps(from, dir) || from;
+        let pitch = null;
+        if (roll < leapRate(maxSemi)) {
+          steps = leapSteps(maxSemi);
+          pitch = scaleSteps(from, dir * steps) || scaleSteps(from, -dir * steps);
+        }
+        if (pitch == null) {
+          if (maxSemi >= 4 && maxSemi < 7 && roll < 0.55) steps = 2;
+          else steps = 1;
+          pitch = scaleSteps(from, dir * steps) || scaleSteps(from, dir) || from;
+        }
         return finish(pitch, from);
       }
       phraseLeft--;
@@ -696,9 +708,12 @@
       let pitch = null;
       const roll = Math.random();
       if (!repeated && roll < 0.08) pitch = from;
-      else if (roll < 0.72) pitch = scaleSteps(from, dir);
+      else if (maxSemi >= 7 && roll < leapRate(maxSemi)) {
+        const n = leapSteps(maxSemi);
+        pitch = scaleSteps(from, dir * n) || scaleSteps(from, -dir * n);
+      } else if (roll < 0.72) pitch = scaleSteps(from, dir);
       else if (roll < 0.84 && maxSemi >= 4) pitch = scaleSteps(from, dir * 2);
-      else if (kind === "beat" && maxSemi >= 4) pitch = scaleSteps(from, dir * leapSteps(maxSemi));
+      else if (maxSemi >= 4) pitch = scaleSteps(from, dir * leapSteps(maxSemi)) || scaleSteps(from, -dir * leapSteps(maxSemi));
       if (pitch == null) {
         turn();
         pitch = scaleSteps(from, dir) || scaleSteps(from, -dir) || from;
