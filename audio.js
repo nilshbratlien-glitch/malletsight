@@ -154,7 +154,7 @@
     src.buffer = best.buffer;
     src.playbackRate.value = midiToFreq(midi) / midiToFreq(best.midi);
     const g = c.createGain();
-    g.gain.setValueAtTime(instId === "xylo" ? 2.5 : 0.75, time);
+    g.gain.setValueAtTime(instId === "xylo" ? 3.75 : 0.75, time);
     src.connect(g);
     g.connect(scoreOut());
     src.start(time);
