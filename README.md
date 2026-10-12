@@ -1,6 +1,12 @@
 # Mallet Sight Reader
 
-v1.3 is what Netlify serves from `main`. The `test` branch matches it.
+v1.4 is what Netlify serves from `main`. The `test` branch matches it.
+
+## v1.4
+
+- The opening note moves. With "Start on tonic" on, it can be the tonic below or above.
+- A 5.0 marimba uses its low octave. Each line starts with the clef the music is in.
+- Xylophone and marimba playback are louder than the other instruments.
 
 ## v1.3
 
@@ -9,8 +15,6 @@ v1.3 is what Netlify serves from `main`. The `test` branch matches it.
 - A line above the music names the level, key, meter, and instrument.
 - The staff you pick is the staff that is written. A line with no chords changes clef by the bar.
 - Density 1 leaves more of the bar silent. A single line moves through the range, and the leap setting is the leap that gets written.
-- The opening note moves. A 5.0 marimba uses its low octave, and each line starts with the clef the music is in.
-- Xylophone and marimba playback are louder than the other instruments.
 
 ## v1.2
 
