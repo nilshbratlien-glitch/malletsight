@@ -297,22 +297,31 @@
       lines.push("[V:1] " + upper.join(" | ") + " |]");
       lines.push("[V:2] " + lower.join(" | ") + " |]");
     } else if (clef === "auto") {
+      lines.push("%%linebreak <EOL>");
       let prev = null;
-      const parts = [];
-      score.measures.forEach((m, i) => {
+      const bars = score.measures.map((m) => {
         const c = measureClef(m, off, prev);
-        const music = measureAbc(m, score, options, score.time);
-        if (i === 0) {
-          lines.push("K:" + keyId + " clef=" + c);
-          parts.push(music);
-        } else if (c !== prev) {
-          parts.push("[K:" + keyId + " clef=" + c + "] " + music);
-        } else {
-          parts.push(music);
-        }
+        const bar = { clef: c, changed: prev != null && c !== prev, music: measureAbc(m, score, options, score.time) };
         prev = c;
+        return bar;
       });
-      lines.push(parts.join(" | ") + " |]");
+      const width = options.staffWidth || 640;
+      const per = width < 520 ? 2 : width < 860 ? 3 : 4;
+      const groups = [[]];
+      bars.forEach((bar) => {
+        const line = groups[groups.length - 1];
+        if (line.length >= per && !bar.changed) groups.push([]);
+        else if (line.length >= per + 1 && bar.changed) groups.push([]);
+        groups[groups.length - 1].push(bar);
+      });
+      if (bars.length) lines.push("K:" + keyId + " clef=" + bars[0].clef);
+      groups.forEach((group, gi) => {
+        if (!group.length) return;
+        const body = group
+          .map((bar, bi) => (bar.changed && !(gi === 0 && bi === 0) ? "[K:" + keyId + " clef=" + bar.clef + "] " : "") + bar.music)
+          .join(" | ");
+        lines.push(body + (gi === groups.length - 1 ? " |]" : " |"));
+      });
     } else {
       lines.push("K:" + keyId + " clef=" + (clef === "bass" ? "bass" : "treble"));
       const body = score.measures.map((m) => measureAbc(m, score, options, score.time)).join(" | ");
@@ -333,22 +342,26 @@
       return;
     }
 
-    const abc = scoreToAbc(score, options);
     const pageW = Math.max(280, container.clientWidth || 800);
+    const abc = scoreToAbc(score, Object.assign({}, options, { staffWidth: Math.max(240, pageW - 36) }));
+    const pageWUsed = Math.max(240, pageW - 36);
     const scale = Math.max(0.75, Math.min(1.8, options.zoom || 1));
+    const manualLines = abc.indexOf("%%linebreak") >= 0;
     try {
       const rendered = ABCJS.renderAbc(wrap, abc, {
         scale: scale,
-        staffwidth: Math.max(240, pageW - 36),
+        staffwidth: pageWUsed,
         paddingtop: 8,
         paddingbottom: 12,
         paddingleft: 8,
         paddingright: 12,
-        wrap: {
-          minSpacing: 1.35,
-          maxSpacing: 2.2,
-          staffwidth: Math.max(240, pageW - 36),
-        },
+        wrap: manualLines
+          ? undefined
+          : {
+              minSpacing: 1.35,
+              maxSpacing: 2.2,
+              staffwidth: pageWUsed,
+            },
         add_classes: true,
       });
       return rendered && rendered[0] ? rendered[0] : null;
