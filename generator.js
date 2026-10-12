@@ -626,11 +626,22 @@
       return prev;
     }
 
+    function openingPitch() {
+      const mid = (lo + hi) / 2;
+      if (settings.startTonic) {
+        const tonics = pool.filter((p) => pcOf(p) === tonic);
+        if (!tonics.length) return T.nearestIn(pool, mid);
+        const ranked = tonics.slice().sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid));
+        return T.pick(ranked.slice(0, Math.min(3, ranked.length)));
+      }
+      const reach = Math.max(12, Math.round((hi - lo) * 0.35));
+      const band = pool.filter((p) => Math.abs(p - mid) <= reach);
+      return T.pick(band.length ? band : pool);
+    }
+
     return function next(kind) {
       if (prev == null) {
-        prev = settings.startTonic
-          ? nearestTonic((settings.rangeLow + settings.rangeHigh) / 2)
-          : T.nearestIn(pool, (settings.rangeLow + settings.rangeHigh) / 2);
+        prev = openingPitch();
         prevWasChromatic = false;
         return prev;
       }
@@ -731,6 +742,14 @@
     return d >= minS && d <= maxS;
   }
 
+  function wideReach(settings) {
+    return twoStaff(settings) && settings.rangeLow < 45;
+  }
+
+  function handGapMax(settings) {
+    return wideReach(settings) ? 22 : 12;
+  }
+
   function twoStaff(settings) {
     if (settings.clef === "treble" || settings.clef === "bass") return false;
     if (settings.texture === "melody") return false;
@@ -744,7 +763,8 @@
     if (!chord || chord.length !== nNotes) return false;
     const span = chord[chord.length - 1] - chord[0];
     const wide = twoStaff(settings);
-    if (span > (wide ? 31 : 19)) return false;
+    const spanMax = wide ? (settings.rangeLow < 45 ? 40 : 31) : 19;
+    if (span > spanMax) return false;
     const maxS = Math.min(settings.handSpanMax || 12, 12);
     if (nNotes === 2) return wide || handSpanOk(chord[0], chord[1], 3, maxS);
     if (nNotes === 3) {
@@ -831,6 +851,11 @@
       }
       if (want >= 4 && uniq.length === 4) score -= 3;
       if (want >= 4 && uniq.length < 4) score += 5;
+      if (wideReach(settings)) {
+        if (uniq[0] < 45) score -= 2;
+        if (uniq[0] <= settings.rangeLow + 2) score += 6;
+        score += Math.random() * 8;
+      }
       if (score < bestScore) {
         bestScore = score;
         best = uniq;
@@ -842,7 +867,7 @@
       if (rootPc != null && pcOf(p) !== rootPc) return false;
       if (prevBass == null) return true;
       const d = Math.abs(p - prevBass);
-      return d <= 7 || d === 12;
+      return d <= (wideReach(settings) ? 19 : 7) || d === 12;
     });
     if (!bassList.length) {
       bassList = avail.filter((p) => (!grand || p < 59) && (rootPc == null || pcOf(p) === rootPc));
@@ -868,7 +893,7 @@
         lhTops.forEach((lh) => {
           for (let i = 0; i < rh.length; i++) {
             const gap = rh[i] - lh;
-            if (gap < 3 || gap > 12) continue;
+            if (gap < 3 || gap > handGapMax(settings)) continue;
             for (let j = i + 1; j < rh.length; j++) {
               const d = rh[j] - rh[i];
               if (d < 3 || d > 7) continue;
@@ -881,7 +906,7 @@
             const d = rh[j] - rh[i];
             if (d < 3 || d > 7) continue;
             const gap = rh[i] - bass;
-            if (gap < 3 || gap > 12) continue;
+            if (gap < 3 || gap > handGapMax(settings)) continue;
             consider([bass, rh[i], rh[j]]);
           }
         }
@@ -903,7 +928,7 @@
       const rh = pitches[3] - pitches[2];
       const gap = pitches[2] - pitches[1];
       if (lh < 3 || lh > 7 || rh < 3 || rh > 7) return false;
-      if (gap < 3 || gap > 12) return false;
+      if (gap < 3 || gap > handGapMax(settings)) return false;
       if (grand && (pitches[1] >= 60 || pitches[2] < 60)) return false;
       if (!grand && pitches[3] - pitches[0] > 19) return false;
       return playable(pitches, 4, settings);

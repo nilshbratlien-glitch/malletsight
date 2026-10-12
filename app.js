@@ -149,7 +149,10 @@
   function applyInstrumentRange(force) {
     const inst = T.INSTRUMENTS.find((i) => i.id === settings.instrumentId);
     if (!inst) return;
-    if (force || settings.rangeLow < inst.low || settings.rangeHigh > inst.high) {
+    const inheritedLow = T.INSTRUMENTS.some(
+      (other) => other.id !== inst.id && other.low === settings.rangeLow && other.low > inst.low
+    );
+    if (force || inheritedLow || settings.rangeLow < inst.low || settings.rangeHigh > inst.high) {
       settings.rangeLow = inst.low;
       settings.rangeHigh = inst.high;
     }
