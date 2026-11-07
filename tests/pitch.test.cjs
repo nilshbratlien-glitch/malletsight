@@ -1,7 +1,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const abcjs = require("../abcjs.js");
-const { load, settings } = require("./helpers.cjs");
+const { load, settings, levels } = require("./helpers.cjs");
 
 function audioNotes(abc) {
   return abcjs.parseOnly(abc)[0].setUpAudio().tracks.flat().filter(event => event.cmd === "note");
@@ -55,3 +55,11 @@ for (const keyId of ["C", "G", "F", "Db", "Am"]) {
   });
 }
 
+
+test("ABC matches MIDI with instrument octave offsets, triplets, ties and grand staff", () => {
+  for (const instrument of load().Theory.INSTRUMENTS) for (let seed = 1; seed <= 20; seed++) {
+    const context = load(seed);
+    const score = context.Generator.generate(settings({ ...levels[9], instrumentId: instrument.id, rangeLow: instrument.low, rangeHigh: instrument.high, mallets: 3, texture: "mixed", accidentals: true, dynamics: false }));
+    assertWrittenPitches(context, score, `${instrument.id}, seed ${seed}`);
+  }
+});

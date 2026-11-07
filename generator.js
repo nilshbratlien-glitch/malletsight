@@ -314,16 +314,30 @@
     return events;
   }
 
+  function rhythmAllowed(events, settings) {
+    return events.every((ev) =>
+      ev.rest ? settings.allowRests && settings.rests.includes(ev.dur.id) : settings.rhythms.includes(ev.dur.id)
+    );
+  }
+
   function buildRhythm(settings, ticks, beatTicks, avoidKeys) {
     const allowed = settings.rhythms.map(durById).filter(Boolean);
     const has = (id) => allowed.some((d) => d.id === id);
     const density = settings.rhythmDensity || 3;
     const varied = buildVaried(has, ticks, beatTicks || T.TICKS.quarter, density, !!settings.allowRests, avoidKeys);
-    if (varied) return breakEvenRuns(varied, allowed);
+    if (varied) {
+      const result = breakEvenRuns(varied, allowed);
+      if (rhythmAllowed(result, settings)) return result;
+    }
 
-    const restAllowed = settings.rests
-      .map(durById)
-      .filter((d) => d && !d.group);
+    const restAllowed = settings.allowRests ? settings.rests.map(durById).filter((d) => d && !d.group) : [];
+    const units = allowed.concat(restAllowed);
+    const canFill = Array(ticks + 1).fill(false);
+    canFill[0] = true;
+    for (let t = 1; t <= ticks; t++) {
+      canFill[t] = units.some((d) => spanOf(d) <= t && canFill[t - spanOf(d)]);
+    }
+    if (!canFill[ticks]) throw new Error("Selected note and rest values cannot fill this meter.");
     const events = [];
     let left = ticks;
     let lastWasRest = false;
@@ -334,24 +348,16 @@
       const pos = ticks - left;
       const toBeat = beat - (pos % beat);
       const cap = pos % beat === 0 ? left : toBeat;
-      const noteFits = allowed.filter((d) => spanOf(d) <= cap);
-      const restFits = restAllowed.filter((d) => spanOf(d) <= cap);
-      const useRest =
-        settings.allowRests &&
-        restFits.length &&
-        !lastWasRest &&
-        events.length > 0 &&
-        pos !== 0 &&
-        Math.random() < restChance;
-      let pool = useRest ? restFits : noteFits.length ? noteFits : restFits;
-      if (!pool.length) {
-        const fallback = [durById("8"), durById("16"), durById("32")].filter((d) => d && d.ticks <= cap && d.ticks <= left);
-        const unit = fallback[0];
-        if (!unit) break;
-        left -= emitRhythm(events, unit, true);
-        lastWasRest = true;
-        continue;
+      const fits = (choices, limit) => choices.filter((d) => spanOf(d) <= limit && canFill[left - spanOf(d)]);
+      let noteFits = fits(allowed, cap);
+      let restFits = fits(restAllowed, cap);
+      if (!noteFits.length && !restFits.length) {
+        noteFits = fits(allowed, left);
+        restFits = fits(restAllowed, left);
       }
+      const useRest = restFits.length > 0 && (!noteFits.length ||
+        (!lastWasRest && events.length > 0 && Math.random() < restChance));
+      const pool = useRest ? restFits : noteFits;
       const onBeat = pos % beat === 0;
       const choice = T.weightedPick(pool, (d) => {
         const shortBias = density / 5;
@@ -455,7 +461,11 @@
     if (!win || !figs.length || ticks < win) return events;
     const starts = [];
     for (let pos = 0; pos + win <= ticks; pos += beat) starts.push(pos);
-    const order = starts.slice().sort(() => Math.random() - 0.5);
+    const order = starts.slice();
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
     for (let i = 0; i < order.length; i++) {
       const cut = cutAround(events, order[i], order[i] + win);
       if (!cut) continue;
@@ -463,7 +473,7 @@
       const mid = fig.notes.map((n) => ({ dur: n.dur, rest: n.rest, tuplet: null }));
       const out = cut.before.concat(mid, cut.after);
       const used = out.reduce((s, e) => s + e.dur.ticks, 0);
-      if (used === ticks) return out;
+      if (used === ticks && rhythmAllowed(out, settings)) return out;
     }
     return events;
   }
@@ -1416,14 +1426,14 @@
       const phraseEnd = (m + 1) % 4 === 0;
       if (phraseEnd) {
         const breathed = phraseBreath(rhythm, time.ticks, time.beatTicks, settings.endTonic !== false);
-        if (breathed) rhythm = breathed;
+        if (breathed && rhythmAllowed(breathed, settings)) rhythm = breathed;
         else if (lastBar) {
           const settled = settleEnding(rhythm, time.ticks, time.beatTicks, settings.endTonic !== false);
-          if (settled) rhythm = settled;
+          if (settled && rhythmAllowed(settled, settings)) rhythm = settled;
         }
       } else if (lastBar) {
         const settled = settleEnding(rhythm, time.ticks, time.beatTicks, settings.endTonic !== false);
-        if (settled) rhythm = settled;
+        if (settled && rhythmAllowed(settled, settings)) rhythm = settled;
         else if (settings.endTonic !== false) {
           const sounding = rhythm.map((ev, i) => ({ ev: ev, i: i })).filter((x) => !x.ev.rest);
           if (sounding.length) sounding[sounding.length - 1].ev.cadence = "tonic";
