@@ -137,8 +137,8 @@
     return letter.toLowerCase() + "'''";
   }
 
-  /* Absolute accidental against the key signature, including naturals. */
-  function spellAbc(midi, key) {
+  /* Carry accidentals by letter and octave within the current measure. */
+  function spellAbc(midi, key, accidentals) {
     const pc = ((midi % 12) + 12) % 12;
     const options = [];
     LETTERS.forEach((item) => {
@@ -154,7 +154,10 @@
     const ranked = options.slice().sort((a, b) => spellScore(b, key) - spellScore(a, key));
     const best = ranked[0];
     let mark = "";
-    if (best.acc !== best.sig) {
+    const name = best.L + best.oct;
+    const active = accidentals && accidentals.has(name) ? accidentals.get(name) : best.sig;
+    if (accidentals) accidentals.set(name, best.acc);
+    if (best.acc !== active) {
       if (best.acc === 0) mark = "=";
       else if (best.acc === 1) mark = "^";
       else if (best.acc === -1) mark = "_";
