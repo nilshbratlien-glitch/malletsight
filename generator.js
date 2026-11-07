@@ -822,7 +822,7 @@
     if (avail.length < 2) return null;
     const prevBass = prev && prev.length ? prev[0] : null;
     const prevTop = prev && prev.length ? prev[prev.length - 1] : null;
-    const want = opts.nNotes || (settings.mallets >= 4 ? 4 : 3);
+    const want = Math.min(settings.mallets, opts.nNotes || settings.mallets);
     const rootPc = opts.rootPc;
     const topNote = opts.topNote;
     let best = null;
@@ -830,7 +830,7 @@
 
     function consider(pitches) {
       const uniq = [...new Set(pitches)].sort((a, b) => a - b);
-      if (uniq.length < 2 || uniq.length > 4) return;
+      if (uniq.length < 2 || uniq.length > Math.min(4, want)) return;
       if (topNote != null && uniq[uniq.length - 1] !== topNote) return;
       if (want >= 4 && uniq.length < 3) return;
       if (want <= 2 && uniq.length !== 2) return;
