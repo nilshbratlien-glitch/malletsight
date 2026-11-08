@@ -69,27 +69,19 @@
     const pts = measure.events.flatMap((e) => (e.pitches || []).map((p) => p + off));
     if (!pts.length) return prev || "treble";
     const mid = pts.reduce((a, b) => a + b, 0) / pts.length;
-    const lowShare = pts.filter((p) => p <= 55).length / pts.length;
+    const lowShare = pts.filter((p) => p <= 58).length / pts.length;
     const highShare = pts.filter((p) => p >= 62).length / pts.length;
     if (highShare >= 0.65) return "treble";
-    if (lowShare >= 0.65) return "bass";
-    if (mid >= 60) return "treble";
-    if (mid <= 54) return "bass";
-    return prev || (mid >= 58 ? "treble" : "bass");
+    if (lowShare >= 0.40) return "bass";
+    if (mid >= 62) return "treble";
+    if (mid <= 58) return "bass";
+    return prev || (mid >= 60 ? "treble" : "bass");
   }
 
   function staffClef(score) {
     if (score.clef === "bass" || score.clef === "treble" || score.clef === "grand" || score.clef === "auto") {
       return score.clef;
     }
-    const off = T.writtenOff(score.settingsSnapshot.instrument);
-    const pitches = score.measures.flatMap((m) => m.events.flatMap((e) => (e.pitches || []).map((p) => p + off)));
-    if (!pitches.length) return "treble";
-    const mid = pitches.reduce((a, b) => a + b, 0) / pitches.length;
-    const lo = Math.min.apply(null, pitches);
-    const hi = Math.max.apply(null, pitches);
-    if (lo < 55 && hi >= 64) return "grand";
-    if (mid < 62 || hi <= 65) return "bass";
     return "treble";
   }
 
@@ -368,10 +360,10 @@
       return rendered && rendered[0] ? rendered[0] : null;
     } catch (err) {
       console.error(err);
-      wrap.innerHTML =
-        '<p class="error">Could not render this etude.<br><small>' +
-        String(err.message || err) +
-        "</small></p>";
+      const p = document.createElement("p");
+      p.className = "error";
+      p.textContent = "Could not render this etude. " + String(err.message || err);
+      wrap.appendChild(p);
       return null;
     }
   }
