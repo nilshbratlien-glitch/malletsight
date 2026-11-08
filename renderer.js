@@ -82,14 +82,6 @@
     if (score.clef === "bass" || score.clef === "treble" || score.clef === "grand" || score.clef === "auto") {
       return score.clef;
     }
-    const off = T.writtenOff(score.settingsSnapshot.instrument);
-    const pitches = score.measures.flatMap((m) => m.events.flatMap((e) => (e.pitches || []).map((p) => p + off)));
-    if (!pitches.length) return "treble";
-    const mid = pitches.reduce((a, b) => a + b, 0) / pitches.length;
-    const lo = Math.min.apply(null, pitches);
-    const hi = Math.max.apply(null, pitches);
-    if (lo < 58 && hi >= 64) return "grand";
-    if (mid < 64 || hi <= 65) return "bass";
     return "treble";
   }
 
@@ -368,10 +360,10 @@
       return rendered && rendered[0] ? rendered[0] : null;
     } catch (err) {
       console.error(err);
-      wrap.innerHTML =
-        '<p class="error">Could not render this etude.<br><small>' +
-        String(err.message || err) +
-        "</small></p>";
+      const p = document.createElement("p");
+      p.className = "error";
+      p.textContent = "Could not render this etude. " + String(err.message || err);
+      wrap.appendChild(p);
       return null;
     }
   }
