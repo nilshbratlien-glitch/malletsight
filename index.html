@@ -341,8 +341,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       <button class="btn" id="btnCloseSettings">Close</button>
     </header>
     <div class="drawer-body">
-      <div class="section">
-        <h3>Instrument</h3>
+      <details class="section" open>
+        <summary>Instrument</summary>
         <div class="row"><label>Keyboard</label><select id="instrument"></select></div>
         <div class="row"><label>Mallets</label>
           <select id="mallets">
@@ -369,10 +369,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
           </div>
         </div>
         <div class="row"><label>Staff</label><select id="clef"></select></div>
-      </div>
+      </details>
 
-      <div class="section">
-        <h3>Piece</h3>
+      <details class="section" open>
+        <summary>Piece</summary>
         <div class="chips key-presets level-row" id="difficulty">
           <button type="button" class="chip" data-level="1">1</button>
           <button type="button" class="chip" data-level="2">2</button>
@@ -408,10 +408,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
         </div>
         <div class="row"><label>Tempo <span id="tempoVal">80</span></label></div>
         <input type="range" id="tempo" min="40" max="160" />
-      </div>
+      </details>
 
-      <div class="section">
-        <h3>Pitch</h3>
+      <details class="section">
+        <summary>Pitch</summary>
         <div class="row"><label>Low <span id="rangeLowLbl">C4</span></label></div>
         <input type="range" id="rangeLow" min="36" max="108" />
         <div class="row"><label>High <span id="rangeHighLbl">C6</span></label></div>
@@ -422,10 +422,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
         <p class="hint">Chromatic neighbors outside the key. The next note steps back to the scale. Minor leading tones are always written.</p>
         <label class="toggle"><span>Start on tonic</span><input type="checkbox" id="startTonic" /></label>
         <label class="toggle"><span>End on tonic</span><input type="checkbox" id="endTonic" /></label>
-      </div>
+      </details>
 
-      <div class="section">
-        <h3>Rhythm</h3>
+      <details class="section" open>
+        <summary>Rhythm</summary>
         <div class="chips key-presets" id="rhythmPresets">
           <button type="button" class="chip" data-rhythm-preset="all">All</button>
           <button type="button" class="chip" data-rhythm-preset="long">Long</button>
@@ -448,10 +448,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
         <label class="toggle"><span>Syncopation</span><input type="checkbox" id="syncopation" /></label>
         <p class="hint">Pushes one note off the beat so it holds across the next pulse. The rest of the bar keeps the rhythms you picked.</p>
         <label class="toggle"><span>Ties</span><input type="checkbox" id="ties" /></label>
-      </div>
+      </details>
 
-      <div class="section">
-        <h3>Markings</h3>
+      <details class="section">
+        <summary>Markings</summary>
         <label class="toggle"><span>Accents</span><input type="checkbox" id="accents" /></label>
         <label class="toggle"><span>Staccato</span><input type="checkbox" id="staccato" /></label>
         <label class="toggle"><span>Dynamics</span><input type="checkbox" id="dynamics" /></label>
@@ -470,10 +470,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
           </select>
         </div>
         <label class="toggle"><span>Show mallet numbers</span><input type="checkbox" id="showSticking" /></label>
-      </div>
+      </details>
 
-      <div class="section multi-only">
-        <h3>4-mallet blocks</h3>
+      <details class="section multi-only">
+        <summary>4-mallet blocks</summary>
         <div class="row"><label>Voicing</label>
           <select id="voicing">
             <option value="closed">Closed</option>
@@ -492,11 +492,13 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
         <div class="row"><label>Max grip shift <span id="gripShiftLbl">7</span></label></div>
         <input type="range" id="gripShift" min="3" max="12" />
         <p class="hint">Closed I–IV–V–vi voicings. Left hand takes the bottom two notes, right hand the top two. 1–4 numbers are optional above.</p>
-      </div>
+      </details>
 
-      <button class="btn primary" id="btnApply" style="width:100%;margin-top:8px">Generate with these settings</button>
       <p class="hint" style="text-align:center;margin-top:14px">Mallet Sight Reader v1.4</p>
     </div>
+    <footer class="drawer-footer">
+      <button class="btn primary" id="btnApply">Generate with these settings</button>
+    </footer>
   </aside>
 
   <script src="./abcjs.js"></script>
