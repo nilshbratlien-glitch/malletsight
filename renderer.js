@@ -13,8 +13,8 @@
     return letter.toLowerCase() + "'''";
   }
 
-  function midiToAbcNote(midi, key) {
-    return T.spellAbc(midi, key);
+  function midiToAbcNote(midi, key, accidentals) {
+    return T.spellAbc(midi, key, accidentals);
   }
 
   function gcd(a, b) {
@@ -44,13 +44,13 @@
     return ev.dur.writtenTicks || ev.dur.ticks;
   }
 
-  function eventToken(ev, score, options) {
+  function eventToken(ev, score, options, accidentals) {
     if (ev.rest || !ev.pitches || !ev.pitches.length) {
       return "z" + durAbc(abcTicks(ev));
     }
     const off = T.writtenOff(score.settingsSnapshot.instrument);
     const pitches = [...new Set(ev.pitches)].sort((a, b) => a - b).map((p) => p + off);
-    const notes = pitches.map((p) => midiToAbcNote(p, score.key));
+    const notes = pitches.map((p) => midiToAbcNote(p, score.key, accidentals));
     const len = durAbc(abcTicks(ev));
     let body;
     if (notes.length === 1) body = notes[0] + len;
@@ -168,6 +168,7 @@
   function measureAbc(measure, score, options, time) {
     const beat = time.beatTicks || T.TICKS.quarter;
     const events = collapseTupletRests(measure.events || []);
+    const accidentals = new Map();
     let out = "";
     let beam = "";
     let acc = 0;
@@ -192,18 +193,18 @@
         if (!closed) {
           group.forEach((g) => {
             const plain = Object.assign({}, g, { tuplet: null, dur: Object.assign({}, g.dur, { group: 0, writtenTicks: g.dur.ticks }) });
-            out += markingPrefix(plain) + eventToken(plain, score, options) + " ";
+            out += markingPrefix(plain) + eventToken(plain, score, options, accidentals) + " ";
           });
           continue;
         }
         let tok = "(3";
         group.forEach((g) => {
-          tok += markingPrefix(g) + eventToken(g, score, options);
+          tok += markingPrefix(g) + eventToken(g, score, options, accidentals);
         });
         out += tok + " ";
         continue;
       }
-      let tok = eventToken(ev, score, options);
+      let tok = eventToken(ev, score, options, accidentals);
       const prefix = markingPrefix(ev);
       const beamable = !ev.rest && ev.dur.beamable && ev.pitches && ev.pitches.length;
       if (prefix) tok = prefix + tok;
